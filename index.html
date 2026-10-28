@@ -122,6 +122,13 @@
   .actions3 button { font: 600 15px/1 var(--sans); min-height: 52px; border-radius: 0; cursor: pointer;
                      border: 1px solid var(--ink); background: transparent; color: var(--ink) }
   .actions3 .send { background: var(--blue); color: var(--on-blue); border-color: var(--blue) }
+  .chip { display: inline-block; font: 500 10.5px/1 var(--mono); text-transform: uppercase; padding: 5px 7px;
+          border: 1px solid var(--ink); margin-top: 8px }
+  .chip.on { background: var(--blue); color: var(--on-blue); border-color: var(--blue) }
+  .chip.ok { border-color: var(--ok); color: var(--ok) }
+  .chip.bad { border-color: var(--warn); color: var(--warn) }
+  .runs .r { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--hair); font-size: 15px }
+  .runs .r span { font: 400 12px var(--mono); color: var(--muted); white-space: nowrap }
   .pushbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin: 14px 0 0;
              padding: 12px 14px; background: var(--card); font-size: 14px }
   .pushbar button { flex: none; font: 600 14px var(--sans); background: var(--ink); color: var(--bg); border: 0;
@@ -154,6 +161,7 @@ const TABS = [
   { id: "sent", label: "sent", title: "Sent", lede: "Sent from your outreach mailbox. One follow-up comes back here for approval after 10 days." },
   { id: "replies", label: "replies", title: "Replies", lede: "Answers and bounces. Read them in Gmail." },
   { id: "held", label: "held", title: "Held", lede: "Drafts that need a fix, and emails you skipped." },
+  { id: "agents", label: "agents", title: "Agents", lede: "What the agents are doing with your Held instructions, what they decided, and when each agent last ran." },
   { id: "results", label: "results", title: "Results", lede: "What gets answers: first emails sent, and how many replied, by kind of organisation and by service track." },
 ];
 const GROUP = { approve: "approve", queued: "queued", sent: "sent", replied: "replies", bounced: "replies", fix: "held", skipped: "held" };
@@ -367,7 +375,8 @@ function ago(iso) {
 }
 
 function counts() {
-  const c = { approve: 0, queued: 0, sent: 0, replies: 0, held: 0, results: data?.results?.total?.sent || 0 };
+  const c = { approve: 0, queued: 0, sent: 0, replies: 0, held: 0, results: data?.results?.total?.sent || 0,
+              agents: (data?.agents?.jobs || []).length };
   (data?.items || []).forEach(i => c[GROUP[i.state]]++);
   return c;
 }
@@ -389,12 +398,13 @@ function render() {
   }
   const c = counts();
   tabs.innerHTML = TABS.map(t => `<button role="tab" type="button" data-tab="${t.id}" aria-selected="${t.id === tab}"
-    class="${(t.id === "approve" && c.approve) || (t.id === "replies" && c.replies) ? "hot" : ""}">${t.label}<span class="n">${c[t.id]}</span></button>`).join("");
+    class="${(t.id === "approve" && c.approve) || (t.id === "replies" && c.replies) || (t.id === "agents" && c.agents) ? "hot" : ""}">${t.label}<span class="n">${c[t.id]}</span></button>`).join("");
   tabs.querySelectorAll("button").forEach(b => b.onclick = () => { tab = b.dataset.tab; store.set("od-tab", tab); render(); window.scrollTo(0, 0) });
 
   document.getElementById("updated").textContent = data ? `updated ${ago(data.generated_at)}` : "no data yet";
   const T = TABS.find(t => t.id === tab);
   if (tab === "results") { main.innerHTML = resultsHTML(T); renderPush(); return }
+  if (tab === "agents") { main.innerHTML = agentsHTML(T); renderPush(); return }
   const items = (data?.items || []).filter(i => GROUP[i.state] === tab);
   let html = `<h1>${T.title}</h1><p class="lede">${T.lede}</p>`;
   if (data && (Date.now() - new Date(data.generated_at)) > 3 * 3600e3)
@@ -466,6 +476,27 @@ function resultsHTML(T) {
   return h;
 }
 
+function when(iso) { if (!iso) return ""; return `${day(iso)} ${iso.slice(11, 16)}` }
+function agentsHTML(T) {
+  const a = data?.agents || { jobs: [], history: [], runs: [] };
+  let h = `<h1>${T.title}</h1><p class="lede">${T.lede}</p><h2>Working now</h2><div class="list">`;
+  if (!a.jobs.length) h += `<div class="empty">No agent is working on your instructions right now.</div>`;
+  for (const j of a.jobs) h += `<article class="item"><div class="top"><div class="org">${esc(j.org)}</div></div>
+    <span class="chip ${j.status === "working" ? "on" : ""}">${j.status === "working" ? "working on it now" : "waiting to start"}</span>
+    <div class="quote">${esc(j.instruction)}</div>
+    <div class="facts">asked ${esc(when(j.at))}${j.started_at ? ` · started ${esc(when(j.started_at))}` : ""}</div></article>`;
+  h += `</div><h2>Done</h2><div class="list">`;
+  if (!a.history.length) h += `<div class="empty">Nothing finished yet.</div>`;
+  for (const j of a.history) {
+    const cls = j.verdict === "fixed" ? "ok" : j.verdict === "dropped" ? "" : "bad";
+    h += `<article class="item"><div class="top"><div class="org">${esc(j.org)}</div><div class="tag">${esc(when(j.finished_at))}</div></div>
+      <span class="chip ${cls}">${esc(j.verdict)}</span><div class="label">you asked</div><div class="quote">${esc(j.instruction)}</div>
+      <div class="label">the agent</div><div class="note">${esc(j.reason)}</div></article>`;
+  }
+  h += `</div><h2>Last runs</h2><div class="runs">` + a.runs.map(r => `<div class="r">${esc(r.agent)}<span>${r.last ? esc(when(r.last)) : "not yet"}</span></div>`).join("") + `</div>`;
+  return h;
+}
+
 function card(i) {
   const fu = i.kind === "followup";
   const head = `<div class="top"><div class="org">${esc(i.org)}</div><div class="tag ${fu ? "blue" : ""}">${fu ? "follow-up" : "first email"} · ${esc(i.lang)}</div></div>`;
@@ -497,9 +528,11 @@ function card(i) {
   }
   if (i.state === "queued")
     return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div><div class="big blue">Goes out ${esc(slotText(i.slot))}</div><div class="facts">to ${esc(i.to)}</div></article>`;
+  const sentView = i.sent_body ? `<div class="body" id="sb-${esc(i.key)}">${esc(i.sent_body)}</div>
+      <button class="more" type="button" data-more="sb-${esc(i.key)}">read the whole email</button>` : "";
   if (i.state === "sent")
-    return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div><div class="big">Sent ${esc(day(i.sent_at))}</div>
-      <div class="facts">to ${esc(i.to)}${i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}</div></article>`;
+    return `<article class="item">${head}<div class="sub">${esc(i.sent_subject || i.subject)}</div><div class="big">Sent ${esc(when(i.sent_at))}</div>
+      <div class="facts">to <b>${esc(i.sent_to || i.to)}</b>${i.sent_attach ? `<br>attached <b>${esc(i.sent_attach)}</b>` : ""}${i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}</div>${sentView}</article>`;
   if (i.state === "bounced")
     return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div>
       <div class="big warn">Bounced: address not working</div><div class="note">${esc(i.note)}</div></article>`;
@@ -513,7 +546,8 @@ function card(i) {
         <div class="row2"><button class="primary" type="button" data-copy="${esc(i.key)}">copy answer</button>
         <a href="${esc(i.gmail)}" target="_blank" rel="noopener">open in Gmail</a></div>`;
     }
-    return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div><div class="big blue">They replied</div>${theirs}${draft}</article>`;
+    const yours = i.sent_body ? `<div class="label">what you sent</div>${sentView}` : "";
+    return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div><div class="big blue">They replied</div>${theirs}${draft}${yours}</article>`;
   }
   const hk = "h:" + i.folder, fid = esc(i.folder);
   if (editing.has(hk)) {
@@ -542,7 +576,7 @@ function card(i) {
 
 document.getElementById("refresh").onclick = load;
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 9;
+const VERSION = 10;
 if ("serviceWorker" in navigator) {
   // a new version installs itself and the app reloads once, so a home-screen app never stays on an old version
   const hadController = !!navigator.serviceWorker.controller;
