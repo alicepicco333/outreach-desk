@@ -86,6 +86,33 @@
   .setup button { font: 600 16px var(--sans); background: var(--blue); color: var(--on-blue); border: 0;
                   min-height: 48px; padding: 0 20px; cursor: pointer }
   .banner { margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--warn); color: var(--warn); font-size: 14px }
+  .quote { margin-top: 12px; padding: 12px 14px; border-left: 3px solid var(--ink); background: var(--card);
+           font-size: 15px; white-space: pre-wrap; word-break: break-word }
+  .label { font: 500 10.5px/1.2 var(--mono); text-transform: uppercase; color: var(--muted); margin-top: 16px }
+  .draft { margin-top: 6px; padding: 12px 14px; background: var(--card); border-left: 3px solid var(--blue);
+           font-size: 15px; white-space: pre-wrap; word-break: break-word }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px }
+  .row2 a, .row2 button { display: flex; align-items: center; justify-content: center; min-height: 46px;
+                          font: 600 15px var(--sans); border: 1px solid var(--ink); background: transparent;
+                          color: var(--ink); text-decoration: none; cursor: pointer; border-radius: 0 }
+  .row2 .primary { background: var(--blue); color: var(--on-blue); border-color: var(--blue) }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 6px 0 18px }
+  .stat { border-top: 1px solid var(--ink); padding-top: 8px }
+  .stat b { display: block; font-weight: 700; font-size: 34px; letter-spacing: -.03em; color: var(--blue); line-height: 1.05 }
+  .stat span { font: 400 11px var(--mono); color: var(--muted) }
+  h2 { font-weight: 700; font-size: 19px; margin: 22px 0 8px }
+  .bars .b { padding: 10px 0; border-bottom: 1px solid var(--hair) }
+  .bars .t { display: flex; justify-content: space-between; gap: 10px; font-size: 15px }
+  .bars .t span { font: 400 12px var(--mono); color: var(--muted); white-space: nowrap }
+  .bars .track { height: 6px; background: var(--card); margin-top: 6px }
+  .bars .fill { height: 6px; background: var(--blue) }
+  .edit label { display: block; font: 500 10.5px/1.2 var(--mono); text-transform: uppercase; color: var(--muted);
+                margin: 14px 0 6px }
+  .edit input, .edit textarea { width: 100%; font: 16px/1.45 var(--sans); color: var(--ink); background: var(--card);
+                                border: 1px solid var(--ink); border-radius: 0; padding: 10px 12px }
+  .edit textarea { min-height: 22em; resize: vertical }
+  .editlink { font: 500 12px var(--mono); color: var(--blue); background: none; border: 0; padding: 12px 0 0;
+              cursor: pointer; display: block }
   .pushbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin: 14px 0 0;
              padding: 12px 14px; background: var(--card); font-size: 14px }
   .pushbar button { flex: none; font: 600 14px var(--sans); background: var(--ink); color: var(--bg); border: 0;
@@ -118,6 +145,7 @@ const TABS = [
   { id: "sent", label: "sent", title: "Sent", lede: "Sent from your outreach mailbox. One follow-up comes back here for approval after 10 days." },
   { id: "replies", label: "replies", title: "Replies", lede: "Answers and bounces. Read them in Gmail." },
   { id: "held", label: "held", title: "Held", lede: "Drafts that need a fix, and emails you skipped." },
+  { id: "results", label: "results", title: "Results", lede: "What gets answers: first emails sent, and how many replied, by kind of organisation and by service track." },
 ];
 const GROUP = { approve: "approve", queued: "queued", sent: "sent", replied: "replies", bounced: "replies", fix: "held", skipped: "held" };
 const store = {
@@ -129,6 +157,7 @@ let data = store.get("od-last", null);
 let tab = store.get("od-tab", "approve");
 let decided = store.get("od-decided", {});      // token -> { action, at } until the PC confirms
 let timer = null;
+const editing = new Set();                       // cards open for editing (not saved between visits)
 
 // ---------- setup: the private link carries the key after the #, which never reaches any server
 function readLink(text) {
@@ -179,6 +208,32 @@ function schedule() {
   clearTimeout(timer);
   const pending = Object.values(decided).some(d => !d.confirmedSeen);
   timer = setTimeout(load, pending ? 6000 : 60000);
+}
+
+async function saveEdit(item, subject, body, btn) {
+  if (!subject.trim() || body.trim().length < 200) return alert("The subject is empty or the email is too short.");
+  if (!body.includes("alicepicco333.github.io/portfolio")) return alert("Keep the link to your portfolio in the email.");
+  btn.disabled = true;
+  try {
+    const key = await crypto.subtle.importKey("raw", b64u(cfg.k), "AES-GCM", false, ["encrypt"]);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key,
+      new TextEncoder().encode(JSON.stringify({ subject: subject.trim(), body }))));
+    const blob = new Uint8Array(12 + ct.length); blob.set(iv); blob.set(ct, 12);
+    let bin = ""; blob.forEach(x => bin += String.fromCharCode(x));
+    const msg = `edit:${item.token}:` + btoa(bin);
+    if (msg.length > 4000) { btn.disabled = false; return alert("This email is too long to send from the app (about 2,500 characters at most). Shorten it a little.") }
+    const r = await fetch(`${NTFY}/${cfg.a}`, { method: "POST", body: msg });
+    if (!r.ok) throw new Error(r.status);
+    editing.delete(item.token);
+    decided[item.token] = { action: "edit", at: Date.now(), org: item.org };
+    store.set("od-decided", decided);
+  } catch (e) {
+    btn.disabled = false;
+    return alert("Your edit could not be sent (no connection?). Nothing changed; try again.");
+  }
+  render();
+  schedule();
 }
 
 async function decide(item, action, btns) {
@@ -251,7 +306,7 @@ function ago(iso) {
 }
 
 function counts() {
-  const c = { approve: 0, queued: 0, sent: 0, replies: 0, held: 0 };
+  const c = { approve: 0, queued: 0, sent: 0, replies: 0, held: 0, results: data?.results?.total?.sent || 0 };
   (data?.items || []).forEach(i => c[GROUP[i.state]]++);
   return c;
 }
@@ -278,6 +333,7 @@ function render() {
 
   document.getElementById("updated").textContent = data ? `updated ${ago(data.generated_at)}` : "no data yet";
   const T = TABS.find(t => t.id === tab);
+  if (tab === "results") { main.innerHTML = resultsHTML(T); renderPush(); return }
   const items = (data?.items || []).filter(i => GROUP[i.state] === tab);
   let html = `<h1>${T.title}</h1><p class="lede">${T.lede}</p>`;
   if (data && (Date.now() - new Date(data.generated_at)) > 3 * 3600e3)
@@ -292,12 +348,46 @@ function render() {
     const el = document.getElementById(b.dataset.more); el.classList.toggle("open");
     b.textContent = el.classList.contains("open") ? "show less" : "read the whole email";
   });
+  main.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => { editing.add(b.dataset.edit); render() });
+  main.querySelectorAll("[data-cancel]").forEach(b => b.onclick = () => { editing.delete(b.dataset.cancel); render() });
+  main.querySelectorAll("[data-save]").forEach(b => b.onclick = () => {
+    const t = b.dataset.save, item = items.find(x => x.token === t);
+    saveEdit(item, document.getElementById("s-" + t).value, document.getElementById("t-" + t).value, b);
+  });
+  main.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => {
+    const it = items.find(x => x.key === b.dataset.copy);
+    const text = it.draft.split("\n\n").slice(1).join("\n\n");
+    try { await navigator.clipboard.writeText(text); b.textContent = "copied" } catch (e) { b.textContent = "copy failed" }
+    setTimeout(() => b.textContent = "copy answer", 2500);
+  });
   main.querySelectorAll("[data-act]").forEach(b => b.onclick = () => {
     const item = items.find(x => x.token === b.dataset.token);
     decide(item, b.dataset.act, [...b.parentElement.querySelectorAll("button")]);
   });
   renderPush();
   document.getElementById("foot").textContent = data ? `sending as ${data.mailbox} · ${data.daily_cap} a day, ${data.send_days.join(", ")}` : "";
+}
+
+const SEG = { "funded-project": "Funded projects", institution: "Museums, archives, libraries", "eaa-company": "Companies (accessibility act)",
+  agency: "Agencies", scaleup: "Funded scale-ups", small: "Small organisations", "small (before money first)": "Small, before money first" };
+const TRK = { archives: "Archives and collections", research: "Research and accessibility", unknown: "Unknown" };
+function pct(a, b) { return b ? Math.round(100 * a / b) : 0 }
+function resultsHTML(T) {
+  const r = data?.results;
+  let h = `<h1>${T.title}</h1><p class="lede">${T.lede}</p>`;
+  if (!r || !r.total.sent) return h + `<div class="empty">Nothing sent yet.</div>`;
+  h += `<div class="stats"><div class="stat"><b>${r.total.sent}</b><span>sent</span></div>
+        <div class="stat"><b>${r.total.replied}</b><span>replied</span></div>
+        <div class="stat"><b>${pct(r.total.replied, r.total.sent)}%</b><span>reply rate</span></div></div>`;
+  const block = (title, obj, names) => {
+    const rows = Object.entries(obj).sort((a, b) => pct(b[1].replied, b[1].sent) - pct(a[1].replied, a[1].sent) || b[1].sent - a[1].sent);
+    return `<h2>${title}</h2><div class="bars">` + rows.map(([k, v]) => `<div class="b"><div class="t">${esc(names[k] || k)}
+      <span>${v.replied}/${v.sent} replied${v.bounced ? `, ${v.bounced} bounced` : ""} · ${pct(v.replied, v.sent)}%</span></div>
+      <div class="track"><div class="fill" style="width:${pct(v.replied, v.sent)}%"></div></div></div>`).join("") + `</div>`;
+  };
+  h += block("By kind of organisation", r.segment, SEG) + block("By service track", r.track, TRK);
+  if (r.total.sent < 20) h += `<p class="note">Fewer than 20 emails sent: read these numbers as a first hint, not a result.</p>`;
+  return h;
 }
 
 function card(i) {
@@ -308,14 +398,24 @@ function card(i) {
     const facts = `<div class="facts">to <b>${esc(i.to)}</b>${i.attach ? `<br>attached <b>${esc(i.attach)}</b>` : ""}</div>`;
     const body = `<div class="body" id="b-${esc(i.token)}">${esc(i.body)}</div><button class="more" type="button" data-more="b-${esc(i.token)}">read the whole email</button>`;
     let foot;
+    if (!d && editing.has(i.token)) {
+      return `<article class="item">${head}<div class="edit">
+        <label for="s-${esc(i.token)}">subject</label><input id="s-${esc(i.token)}" value="${esc(i.subject)}">
+        <label for="t-${esc(i.token)}">email</label><textarea id="t-${esc(i.token)}">${esc(i.body)}</textarea></div>
+        ${facts}<div class="actions"><button class="send" type="button" data-save="${esc(i.token)}">Save and send</button>
+        <button class="skip" type="button" data-cancel="${esc(i.token)}">Cancel</button></div></article>`;
+    }
     if (d) {
       const slow = Date.now() - d.at > 120000;
-      foot = d.action === "send"
+      foot = d.action === "edit"
+        ? `<div class="done ${slow ? "slow" : ""}"><b>Edited and approved.</b> Waiting for your PC to save and queue it.<small>${slow ? "Not confirmed after 2 minutes: is your PC on? The decision is kept." : "Your version is the one that will be sent."}</small></div>`
+        : d.action === "send"
         ? `<div class="done ${slow ? "slow" : ""}"><b>Approved.</b> Waiting for your PC to queue it.<small>${slow ? "Not confirmed after 2 minutes: is your PC on? The decision is kept." : "Tapping again changes nothing."}</small></div>`
         : `<div class="done skip-done"><b>Skipped.</b> It will not be sent.<small>Waiting for your PC to confirm.</small></div>`;
     } else {
       foot = `<div class="actions"><button class="send" type="button" data-act="send" data-token="${esc(i.token)}">Send</button>
-              <button class="skip" type="button" data-act="skip" data-token="${esc(i.token)}">Skip</button></div>`;
+              <button class="skip" type="button" data-act="skip" data-token="${esc(i.token)}">Skip</button></div>
+              <button class="editlink" type="button" data-edit="${esc(i.token)}">edit the text first</button>`;
     }
     return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div>${facts}${body}${foot}</article>`;
   }
@@ -324,10 +424,21 @@ function card(i) {
   if (i.state === "sent")
     return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div><div class="big">Sent ${esc(day(i.sent_at))}</div>
       <div class="facts">to ${esc(i.to)}${i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}</div></article>`;
-  if (i.state === "replied" || i.state === "bounced")
+  if (i.state === "bounced")
     return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div>
-      <div class="big ${i.state === "replied" ? "blue" : "warn"}">${i.state === "replied" ? "They replied" : "Bounced: address not working"}</div>
-      <div class="note">${esc(i.note)}</div><a class="inline" href="https://mail.google.com/mail/u/?authuser=${encodeURIComponent(data.mailbox)}">open Gmail</a></article>`;
+      <div class="big warn">Bounced: address not working</div><div class="note">${esc(i.note)}</div></article>`;
+  if (i.state === "replied") {
+    const theirs = i.their_reply ? `<div class="label">their reply</div><div class="quote">${esc(i.their_reply.split("\n\n").slice(1).join("\n\n") || i.their_reply)}</div>` : "";
+    let draft = `<div class="label">your answer</div><div class="note">Being drafted: it appears here within the hour.</div>`;
+    if (i.draft) {
+      const lines = i.draft.split("\n"), kind = (lines[0].match(/^Type:\s*(.+)/) || [])[1] || "";
+      const text = i.draft.split("\n\n").slice(1).join("\n\n");
+      draft = `<div class="label">your answer, drafted${kind ? " · " + esc(kind) : ""}</div><div class="draft">${esc(text)}</div>
+        <div class="row2"><button class="primary" type="button" data-copy="${esc(i.key)}">copy answer</button>
+        <a href="${esc(i.gmail)}" target="_blank" rel="noopener">open in Gmail</a></div>`;
+    }
+    return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div><div class="big blue">They replied</div>${theirs}${draft}</article>`;
+  }
   return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div>
     <div class="big ${i.state === "fix" ? "warn" : ""}">${i.state === "fix" ? "Needs a fix" : "Skipped"}</div><div class="note">${esc(i.note)}</div></article>`;
 }
