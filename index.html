@@ -121,6 +121,7 @@
   .actions3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; margin-top: 14px }
   .actions3 button { font: 600 15px/1 var(--sans); min-height: 52px; border-radius: 0; cursor: pointer;
                      border: 1px solid var(--ink); background: transparent; color: var(--ink) }
+  .actions3 .send { background: var(--blue); color: var(--on-blue); border-color: var(--blue) }
   .pushbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin: 14px 0 0;
              padding: 12px 14px; background: var(--card); font-size: 14px }
   .pushbar button { flex: none; font: 600 14px var(--sans); background: var(--ink); color: var(--bg); border: 0;
@@ -541,7 +542,7 @@ function card(i) {
 
 document.getElementById("refresh").onclick = load;
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 8;
+const VERSION = 9;
 if ("serviceWorker" in navigator) {
   // a new version installs itself and the app reloads once, so a home-screen app never stays on an old version
   const hadController = !!navigator.serviceWorker.controller;
