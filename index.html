@@ -157,7 +157,7 @@
 const NTFY = "https://ntfy.sh";
 const TABS = [
   { id: "approve", label: "to approve", title: "To approve", lede: "Read each email. Send queues it; nothing leaves before its send day." },
-  { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day (Monday to Friday, 09:00 to 12:00, 3 a day)." },
+  { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day: {schedule}." },
   { id: "sent", label: "sent", title: "Sent", lede: "Sent from your outreach mailbox. One follow-up comes back here for approval after 10 days." },
   { id: "replies", label: "replies", title: "Replies", lede: "Answers and bounces. Read them in Gmail." },
   { id: "held", label: "held", title: "Held", lede: "Drafts that need a fix, and emails you skipped." },
@@ -374,6 +374,20 @@ function ago(iso) {
   return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : day(iso);
 }
 
+const FULL = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" };
+function scheduleText() {
+  const order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const days = (data?.send_days || ["Mon", "Tue", "Wed", "Thu", "Fri"]).slice().sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const idx = days.map(d => order.indexOf(d));
+  const run = idx.every((v, k) => k === 0 || v === idx[k - 1] + 1);
+  const dayText = days.length > 2 && run ? `${FULL[days[0]]} to ${FULL[days[days.length - 1]]}`
+    : days.map(d => FULL[d]).join(days.length === 2 ? " and " : ", ");
+  const [a, b] = (data?.send_window || "09:00-11:59").split("-");
+  const end = b === "11:59" ? "12:00" : b;
+  const n = data?.daily_cap || 3;
+  return `${n} email${n === 1 ? "" : "s"} a day, ${dayText}, ${a} to ${end}`;
+}
+
 function counts() {
   const c = { approve: 0, queued: 0, sent: 0, replies: 0, held: 0, results: data?.results?.total?.sent || 0,
               agents: (data?.agents?.jobs || []).length };
@@ -406,7 +420,7 @@ function render() {
   if (tab === "results") { main.innerHTML = resultsHTML(T); renderPush(); return }
   if (tab === "agents") { main.innerHTML = agentsHTML(T); renderPush(); return }
   const items = (data?.items || []).filter(i => GROUP[i.state] === tab);
-  let html = `<h1>${T.title}</h1><p class="lede">${T.lede}</p>`;
+  let html = `<h1>${T.title}</h1><p class="lede">${T.lede.replace("{schedule}", scheduleText())}</p>`;
   if (data && (Date.now() - new Date(data.generated_at)) > 3 * 3600e3)
     html += `<div class="banner">Last update from your PC was ${ago(data.generated_at)}. Is it on? Decisions are kept and applied when it is back.</div>`;
   if (tab === "approve" && data?.in_line) html += `<p class="note">${data.in_line} more checked draft${data.in_line > 1 ? "s" : ""} in line: they come here as you decide.</p>`;
@@ -451,7 +465,7 @@ function render() {
     decide(item, b.dataset.act, [...b.parentElement.querySelectorAll("button")]);
   });
   renderPush();
-  document.getElementById("foot").textContent = (data ? `sending as ${data.mailbox} · ${data.daily_cap} a day, ${data.send_days.join(", ")} · ` : "") + `version ${VERSION}`;
+  document.getElementById("foot").textContent = (data ? `sending as ${data.mailbox} · ${scheduleText()} · ` : "") + `version ${VERSION}`;
 }
 
 const SEG = { "funded-project": "Funded projects", institution: "Museums, archives, libraries", "eaa-company": "Companies (accessibility act)",
@@ -576,7 +590,7 @@ function card(i) {
 
 document.getElementById("refresh").onclick = load;
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 11;
+const VERSION = 12;
 if ("serviceWorker" in navigator) {
   // a new version installs itself and the app reloads once, so a home-screen app never stays on an old version
   const hadController = !!navigator.serviceWorker.controller;
