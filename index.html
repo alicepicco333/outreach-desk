@@ -157,7 +157,7 @@
 const NTFY = "https://ntfy.sh";
 const TABS = [
   { id: "approve", label: "to approve", title: "To approve", lede: "Read each email. Send queues it; nothing leaves before its send day." },
-  { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day (Tue to Thu, 09:00 to 12:00)." },
+  { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day (Monday to Friday, 09:00 to 12:00, 3 a day)." },
   { id: "sent", label: "sent", title: "Sent", lede: "Sent from your outreach mailbox. One follow-up comes back here for approval after 10 days." },
   { id: "replies", label: "replies", title: "Replies", lede: "Answers and bounces. Read them in Gmail." },
   { id: "held", label: "held", title: "Held", lede: "Drafts that need a fix, and emails you skipped." },
@@ -576,7 +576,7 @@ function card(i) {
 
 document.getElementById("refresh").onclick = load;
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 10;
+const VERSION = 11;
 if ("serviceWorker" in navigator) {
   // a new version installs itself and the app reloads once, so a home-screen app never stays on an old version
   const hadController = !!navigator.serviceWorker.controller;
