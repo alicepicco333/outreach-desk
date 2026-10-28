@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#D5D6DB">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Outreach">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="robots" content="noindex, nofollow">
+<title>Outreach</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #D5D6DB; --ink: #0E0E10; --muted: #55555E; --hair: #B4B4BC; --card: #E3E4E8;
+    --blue: #1A14FF; --on-blue: #FFFFFF; --warn: #A3260B; --ok: #0B6B3A;
+    --sans: "Inter Tight", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0E0E10; --ink: #ECECEF; --muted: #9A9AA6; --hair: #2C2C33; --card: #18181C;
+      --blue: #6A66FF; --on-blue: #FFFFFF; --warn: #FF8466; --ok: #5CD69A;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0 }
+  html { -webkit-text-size-adjust: 100% }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.45;
+         min-height: 100dvh; padding-bottom: env(safe-area-inset-bottom) }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 16px }
+  header { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--ink);
+           padding-top: env(safe-area-inset-top) }
+  .bar { display: flex; align-items: center; justify-content: space-between; height: 52px }
+  .brand { font-weight: 700; font-size: 18px; letter-spacing: -.01em }
+  .meta { font: 400 11px/1.3 var(--mono); color: var(--muted); text-align: right }
+  .meta button { font: inherit; color: var(--blue); background: none; border: 0; padding: 4px 0; cursor: pointer }
+  nav { display: flex; gap: 6px; overflow-x: auto; padding: 0 0 12px; scrollbar-width: none }
+  nav::-webkit-scrollbar { display: none }
+  nav button { flex: none; font: 500 12px/1 var(--mono); text-transform: lowercase; border: 1px solid var(--ink);
+               background: transparent; color: var(--ink); padding: 9px 11px; border-radius: 0; cursor: pointer }
+  nav button[aria-selected="true"] { background: var(--ink); color: var(--bg) }
+  nav button .n { margin-left: 6px }
+  nav button.hot .n { color: var(--blue) }
+  nav button[aria-selected="true"].hot .n { color: var(--bg) }
+  h1 { font-weight: 800; font-size: 34px; line-height: 1.05; letter-spacing: -.035em; margin: 22px 0 6px }
+  .lede { color: var(--muted); font-size: 15px; margin-bottom: 14px }
+  .list { border-top: 1px solid var(--hair) }
+  .item { border-bottom: 1px solid var(--hair); padding: 18px 0 20px }
+  .top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline }
+  .org { font-weight: 700; font-size: 23px; line-height: 1.12; letter-spacing: -.02em }
+  .tag { font: 500 10.5px/1.2 var(--mono); text-transform: uppercase; color: var(--muted); white-space: nowrap }
+  .tag.blue { color: var(--blue) }
+  .sub { font-weight: 500; font-size: 16px; margin-top: 6px }
+  .facts { font: 400 12px/1.6 var(--mono); color: var(--muted); margin-top: 8px; word-break: break-word }
+  .facts b { font-weight: 500; color: var(--ink) }
+  .body { margin-top: 12px; background: var(--card); padding: 14px; font-size: 15px; white-space: pre-wrap;
+          word-break: break-word; max-height: 9.6em; overflow: hidden; position: relative }
+  .body.open { max-height: none }
+  .body:not(.open)::after { content: ""; position: absolute; inset: auto 0 0 0; height: 3em;
+                            background: linear-gradient(transparent, var(--card)) }
+  .more { font: 500 12px var(--mono); color: var(--blue); background: none; border: 0; padding: 10px 0 0; cursor: pointer }
+  .actions { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-top: 14px }
+  .actions button { font: 600 16px/1 var(--sans); min-height: 52px; border-radius: 0; cursor: pointer;
+                    border: 1px solid var(--ink) }
+  .send { background: var(--blue); color: var(--on-blue); border-color: var(--blue) !important }
+  .skip { background: transparent; color: var(--ink) }
+  .actions button:active { transform: translateY(1px) }
+  .actions button:disabled { opacity: .45; cursor: default }
+  .done { margin-top: 14px; padding: 12px 14px; border-left: 4px solid var(--blue); background: var(--card);
+          font-size: 15px }
+  .done.skip-done { border-color: var(--muted) }
+  .done.slow { border-color: var(--warn) }
+  .done small { display: block; font: 400 11.5px/1.5 var(--mono); color: var(--muted); margin-top: 4px }
+  .big { font-weight: 700; font-size: 17px; margin-top: 6px }
+  .big.blue { color: var(--blue) }
+  .note { margin-top: 8px; font-size: 14px; color: var(--muted) }
+  .warn { color: var(--warn) }
+  .empty { padding: 36px 0; color: var(--muted); font-size: 15px }
+  .inline { color: var(--blue); text-decoration: underline; text-underline-offset: 2px }
+  .setup textarea { width: 100%; min-height: 110px; font: 13px var(--mono); padding: 10px; background: var(--card);
+                    color: var(--ink); border: 1px solid var(--ink); border-radius: 0; margin: 12px 0 }
+  .setup button { font: 600 16px var(--sans); background: var(--blue); color: var(--on-blue); border: 0;
+                  min-height: 48px; padding: 0 20px; cursor: pointer }
+  .banner { margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--warn); color: var(--warn); font-size: 14px }
+  .pushbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin: 14px 0 0;
+             padding: 12px 14px; background: var(--card); font-size: 14px }
+  .pushbar button { flex: none; font: 600 14px var(--sans); background: var(--ink); color: var(--bg); border: 0;
+                    min-height: 40px; padding: 0 14px; cursor: pointer }
+  footer { font: 400 11px/1.6 var(--mono); color: var(--muted); padding: 28px 0 36px }
+  @media (prefers-reduced-motion: no-preference) { .item { animation: in .18s ease-out } }
+  @keyframes in { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="bar">
+      <div class="brand">outreach</div>
+      <div class="meta"><span id="updated">loading</span><br><button id="refresh" type="button">refresh</button></div>
+    </div>
+    <nav id="tabs" role="tablist" aria-label="Sections"></nav>
+  </div>
+</header>
+<div class="wrap" id="push"></div>
+<main class="wrap" id="main"></main>
+<footer class="wrap" id="foot"></footer>
+
+<script>
+"use strict";
+const NTFY = "https://ntfy.sh";
+const TABS = [
+  { id: "approve", label: "to approve", title: "To approve", lede: "Read each email. Send queues it; nothing leaves before its send day." },
+  { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day (Tue to Thu, 09:00 to 12:00)." },
+  { id: "sent", label: "sent", title: "Sent", lede: "Sent from your outreach mailbox. One follow-up comes back here for approval after 10 days." },
+  { id: "replies", label: "replies", title: "Replies", lede: "Answers and bounces. Read them in Gmail." },
+  { id: "held", label: "held", title: "Held", lede: "Drafts that need a fix, and emails you skipped." },
+];
+const GROUP = { approve: "approve", queued: "queued", sent: "sent", replied: "replies", bounced: "replies", fix: "held", skipped: "held" };
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d } catch (e) { return d } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch (e) {} },
+};
+let cfg = store.get("od-cfg", null);
+let data = store.get("od-last", null);
+let tab = store.get("od-tab", "approve");
+let decided = store.get("od-decided", {});      // token -> { action, at } until the PC confirms
+let timer = null;
+
+// ---------- setup: the private link carries the key after the #, which never reaches any server
+function readLink(text) {
+  const h = (text.split("#")[1] || "");
+  const p = new URLSearchParams(h);
+  if (p.get("k") && p.get("s") && p.get("a")) return { k: p.get("k"), s: p.get("s"), a: p.get("a") };
+  return null;
+}
+const fromHash = readLink(location.href);
+if (fromHash) { cfg = fromHash; store.set("od-cfg", cfg) }
+
+function b64u(s) { s = s.replace(/-/g, "+").replace(/_/g, "/"); while (s.length % 4) s += "="; return Uint8Array.from(atob(s), c => c.charCodeAt(0)) }
+async function decrypt(blobText) {
+  const raw = Uint8Array.from(atob(blobText.trim()), c => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey("raw", b64u(cfg.k), "AES-GCM", false, ["decrypt"]);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12) }, key, raw.slice(12));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+async function load() {
+  if (!cfg) return render();
+  document.getElementById("updated").textContent = "checking";
+  try {
+    const r = await fetch(`${NTFY}/${cfg.s}/json?poll=1&since=12h`, { cache: "no-store" });
+    const lines = (await r.text()).trim().split("\n").filter(Boolean).map(l => JSON.parse(l));
+    const msgs = lines.filter(m => m.event === "message" && m.attachment && m.attachment.expires * 1000 > Date.now());
+    if (msgs.length) {
+      const last = msgs[msgs.length - 1];
+      const blob = await (await fetch(last.attachment.url, { cache: "no-store" })).text();
+      const fresh = await decrypt(blob);
+      if (!data || fresh.generated_at >= data.generated_at) { data = fresh; store.set("od-last", data) }
+    }
+  } catch (e) {
+    console.warn(e);
+  }
+  // forget decisions the PC has confirmed (the token is no longer waiting for approval)
+  if (data) {
+    const waiting = new Set(data.items.filter(i => i.state === "approve").map(i => i.token));
+    for (const t of Object.keys(decided)) if (!waiting.has(t) && decided[t].confirmedSeen) delete decided[t];
+    for (const t of Object.keys(decided)) if (!waiting.has(t)) decided[t].confirmedSeen = true;
+    store.set("od-decided", decided);
+  }
+  render();
+  schedule();
+}
+
+function schedule() {
+  clearTimeout(timer);
+  const pending = Object.values(decided).some(d => !d.confirmedSeen);
+  timer = setTimeout(load, pending ? 6000 : 60000);
+}
+
+async function decide(item, action, btns) {
+  btns.forEach(b => b.disabled = true);
+  decided[item.token] = { action, at: Date.now(), org: item.org };
+  store.set("od-decided", decided);
+  render();
+  try {
+    const r = await fetch(`${NTFY}/${cfg.a}`, { method: "POST", body: `${action}:${item.token}` });
+    if (!r.ok) throw new Error(r.status);
+  } catch (e) {
+    delete decided[item.token];
+    store.set("od-decided", decided);
+    alert("Your decision could not be sent (no connection?). Nothing changed; try again.");
+  }
+  render();
+  schedule();
+}
+
+// ---------- notifications (web push from your PC, only to devices that turned them on)
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+function renderPush() {
+  const el = document.getElementById("push");
+  if (!cfg || !data || !data.vapid_public) return el.innerHTML = "";
+  const on = "Notification" in window && Notification.permission === "granted" && store.get("od-push", null);
+  if (on) return el.innerHTML = "";
+  let text = "Notifications are off on this device.", btn = `<button id="pushon" type="button">Turn on</button>`;
+  if (isIOS && !standalone) { text = "To get notifications on iPhone: Share, then Add to Home Screen, and open Outreach from there."; btn = "" }
+  else if (!("PushManager" in window)) { text = "This browser cannot show notifications from Outreach."; btn = "" }
+  else if ("Notification" in window && Notification.permission === "denied") { text = "Notifications are blocked for Outreach in this browser's settings."; btn = "" }
+  el.innerHTML = `<div class="pushbar"><span>${text}</span>${btn}</div>`;
+  const b = document.getElementById("pushon");
+  if (b) b.onclick = enablePush;
+}
+async function enablePush() {
+  try {
+    if (await Notification.requestPermission() !== "granted") return renderPush();
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(data.vapid_public) });
+    const j = sub.toJSON();
+    j.device = (navigator.userAgent.match(/iPhone|iPad|Android|Windows|Macintosh|Linux/) || ["device"])[0];
+    const key = await crypto.subtle.importKey("raw", b64u(cfg.k), "AES-GCM", false, ["encrypt"]);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(j))));
+    const blob = new Uint8Array(12 + ct.length); blob.set(iv); blob.set(ct, 12);
+    const r = await fetch(`${NTFY}/${cfg.a}`, { method: "POST", body: "sub:" + btoa(String.fromCharCode(...blob)) });
+    if (!r.ok) throw new Error(r.status);
+    store.set("od-push", j.endpoint);
+    renderPush();
+  } catch (e) {
+    alert("Notifications could not be turned on: " + e.message);
+  }
+}
+
+// ---------- rendering
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function day(iso) {
+  if (!iso) return "";
+  const d = new Date(iso.slice(0, 10) + "T12:00:00"), t = new Date(); t.setHours(12, 0, 0, 0);
+  const diff = Math.round((d - t) / 864e5);
+  const name = diff === 0 ? "today" : diff === 1 ? "tomorrow" : diff === -1 ? "yesterday" : `${DAY[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`;
+  return name;
+}
+function slotText(slot) { if (!slot) return "next send day"; const [d, w] = slot.split(" "); return `${day(d)}, ${w.replace("-", " to ")}` }
+function ago(iso) {
+  const m = Math.round((Date.now() - new Date(iso)) / 6e4);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : day(iso);
+}
+
+function counts() {
+  const c = { approve: 0, queued: 0, sent: 0, replies: 0, held: 0 };
+  (data?.items || []).forEach(i => c[GROUP[i.state]]++);
+  return c;
+}
+
+function render() {
+  const main = document.getElementById("main"), tabs = document.getElementById("tabs");
+  if (!cfg) {
+    tabs.innerHTML = "";
+    document.getElementById("updated").textContent = "not set up";
+    main.innerHTML = `<div class="setup"><h1>Set up</h1><p class="lede">Paste the private setup link from your PC
+      (it ends with #k=...). It stays on this device.</p><textarea id="link" aria-label="Setup link"></textarea>
+      <button id="save" type="button">Save</button></div>`;
+    document.getElementById("save").onclick = () => {
+      const c = readLink(document.getElementById("link").value);
+      if (!c) return alert("That is not the setup link.");
+      cfg = c; store.set("od-cfg", cfg); load();
+    };
+    return;
+  }
+  const c = counts();
+  tabs.innerHTML = TABS.map(t => `<button role="tab" type="button" data-tab="${t.id}" aria-selected="${t.id === tab}"
+    class="${(t.id === "approve" && c.approve) || (t.id === "replies" && c.replies) ? "hot" : ""}">${t.label}<span class="n">${c[t.id]}</span></button>`).join("");
+  tabs.querySelectorAll("button").forEach(b => b.onclick = () => { tab = b.dataset.tab; store.set("od-tab", tab); render(); window.scrollTo(0, 0) });
+
+  document.getElementById("updated").textContent = data ? `updated ${ago(data.generated_at)}` : "no data yet";
+  const T = TABS.find(t => t.id === tab);
+  const items = (data?.items || []).filter(i => GROUP[i.state] === tab);
+  let html = `<h1>${T.title}</h1><p class="lede">${T.lede}</p>`;
+  if (data && (Date.now() - new Date(data.generated_at)) > 3 * 3600e3)
+    html += `<div class="banner">Last update from your PC was ${ago(data.generated_at)}. Is it on? Decisions are kept and applied when it is back.</div>`;
+  if (tab === "approve" && data?.in_line) html += `<p class="note">${data.in_line} more checked draft${data.in_line > 1 ? "s" : ""} in line: they come here as you decide.</p>`;
+  html += `<div class="list">`;
+  if (!items.length) html += `<div class="empty">${tab === "approve" ? "Nothing to approve right now." : "Nothing here yet."}</div>`;
+  for (const i of items) html += card(i);
+  html += `</div>`;
+  main.innerHTML = html;
+  main.querySelectorAll("[data-more]").forEach(b => b.onclick = () => {
+    const el = document.getElementById(b.dataset.more); el.classList.toggle("open");
+    b.textContent = el.classList.contains("open") ? "show less" : "read the whole email";
+  });
+  main.querySelectorAll("[data-act]").forEach(b => b.onclick = () => {
+    const item = items.find(x => x.token === b.dataset.token);
+    decide(item, b.dataset.act, [...b.parentElement.querySelectorAll("button")]);
+  });
+  renderPush();
+  document.getElementById("foot").textContent = data ? `sending as ${data.mailbox} · ${data.daily_cap} a day, ${data.send_days.join(", ")}` : "";
+}
+
+function card(i) {
+  const fu = i.kind === "followup";
+  const head = `<div class="top"><div class="org">${esc(i.org)}</div><div class="tag ${fu ? "blue" : ""}">${fu ? "follow-up" : "first email"} · ${esc(i.lang)}</div></div>`;
+  if (i.state === "approve") {
+    const d = decided[i.token];
+    const facts = `<div class="facts">to <b>${esc(i.to)}</b>${i.attach ? `<br>attached <b>${esc(i.attach)}</b>` : ""}</div>`;
+    const body = `<div class="body" id="b-${esc(i.token)}">${esc(i.body)}</div><button class="more" type="button" data-more="b-${esc(i.token)}">read the whole email</button>`;
+    let foot;
+    if (d) {
+      const slow = Date.now() - d.at > 120000;
+      foot = d.action === "send"
+        ? `<div class="done ${slow ? "slow" : ""}"><b>Approved.</b> Waiting for your PC to queue it.<small>${slow ? "Not confirmed after 2 minutes: is your PC on? The decision is kept." : "Tapping again changes nothing."}</small></div>`
+        : `<div class="done skip-done"><b>Skipped.</b> It will not be sent.<small>Waiting for your PC to confirm.</small></div>`;
+    } else {
+      foot = `<div class="actions"><button class="send" type="button" data-act="send" data-token="${esc(i.token)}">Send</button>
+              <button class="skip" type="button" data-act="skip" data-token="${esc(i.token)}">Skip</button></div>`;
+    }
+    return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div>${facts}${body}${foot}</article>`;
+  }
+  if (i.state === "queued")
+    return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div><div class="big blue">Goes out ${esc(slotText(i.slot))}</div><div class="facts">to ${esc(i.to)}</div></article>`;
+  if (i.state === "sent")
+    return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div><div class="big">Sent ${esc(day(i.sent_at))}</div>
+      <div class="facts">to ${esc(i.to)}${i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}</div></article>`;
+  if (i.state === "replied" || i.state === "bounced")
+    return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div>
+      <div class="big ${i.state === "replied" ? "blue" : "warn"}">${i.state === "replied" ? "They replied" : "Bounced: address not working"}</div>
+      <div class="note">${esc(i.note)}</div><a class="inline" href="https://mail.google.com/mail/u/?authuser=${encodeURIComponent(data.mailbox)}">open Gmail</a></article>`;
+  return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div>
+    <div class="big ${i.state === "fix" ? "warn" : ""}">${i.state === "fix" ? "Needs a fix" : "Skipped"}</div><div class="note">${esc(i.note)}</div></article>`;
+}
+
+document.getElementById("refresh").onclick = load;
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+render();
+load();
+</script>
+</body>
+</html>
