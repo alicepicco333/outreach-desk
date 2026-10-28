@@ -118,6 +118,9 @@
   .ask .row2 { margin-top: 8px }
   .working { margin-top: 12px; padding: 12px 14px; border-left: 4px solid var(--blue); background: var(--card); font-size: 15px }
   .working small { display: block; font: 400 11.5px/1.5 var(--mono); color: var(--muted); margin-top: 4px; white-space: pre-wrap }
+  .actions3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; margin-top: 14px }
+  .actions3 button { font: 600 15px/1 var(--sans); min-height: 52px; border-radius: 0; cursor: pointer;
+                     border: 1px solid var(--ink); background: transparent; color: var(--ink) }
   .pushbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin: 14px 0 0;
              padding: 12px 14px; background: var(--card); font-size: 14px }
   .pushbar button { flex: none; font: 600 14px var(--sans); background: var(--ink); color: var(--bg); border: 0;
@@ -206,8 +209,9 @@ async function load() {
     for (const t of Object.keys(decided)) if (!waiting.has(t)) decided[t].confirmedSeen = true;
     store.set("od-decided", decided);
     const held = new Map(data.items.filter(i => GROUP[i.state] === "held").map(i => [i.folder, i]));
-    for (const f of Object.keys(asked)) if (!held.has(f) || (asked[f + ":seen"] && !held.get(f).fixing)) { delete asked[f]; delete asked[f + ":seen"] }
+    for (const f of Object.keys(asked)) if (!f.includes(":") && (!held.has(f) || (asked[f + ":seen"] && !held.get(f).fixing))) { delete asked[f]; delete asked[f + ":seen"]; delete asked[f + ":at"] }
     for (const f of Object.keys(asked)) if (held.get(f)?.fixing) asked[f + ":seen"] = true;
+    for (const f of Object.keys(asked)) if (String(asked[f]).startsWith("Edited by you") && Date.now() - (asked[f + ":at"] || 0) > 120000) { delete asked[f]; delete asked[f + ":at"] }
     store.set("od-asked", asked);
   }
   render();
@@ -244,6 +248,33 @@ async function saveEdit(item, subject, body, btn) {
   }
   render();
   schedule();
+}
+
+async function saveHeld(folder, to, subject, body, send, btn) {
+  if (send) {
+    if (!/^[^@\s,;]+@[^@\s,;]+\.[a-z]{2,}$/i.test(to.trim())) return alert("Add a valid To address (a general address published on their site).");
+    if (!subject.trim() || body.trim().length < 200) return alert("The subject is empty or the email is too short.");
+    if (!body.includes("alicepicco333.github.io/portfolio")) return alert("Keep the link to your portfolio in the email.");
+  }
+  btn.disabled = true;
+  try {
+    const key = await crypto.subtle.importKey("raw", b64u(cfg.k), "AES-GCM", false, ["encrypt"]);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key,
+      new TextEncoder().encode(JSON.stringify({ folder, to: to.trim(), subject: subject.trim(), body, send }))));
+    const blob = new Uint8Array(12 + ct.length); blob.set(iv); blob.set(ct, 12);
+    let bin = ""; blob.forEach(x => bin += String.fromCharCode(x));
+    const msg = "hedit:" + btoa(bin);
+    if (msg.length > 4000) { btn.disabled = false; return alert("This email is too long to send from the app (about 2,500 characters at most). Shorten it a little.") }
+    const r = await fetch(`${NTFY}/${cfg.a}`, { method: "POST", body: msg });
+    if (!r.ok) throw new Error(r.status);
+    editing.delete("h:" + folder);
+    if (send) { asked[folder] = "Edited by you: approve and send."; asked[folder + ":at"] = Date.now(); store.set("od-asked", asked) }
+  } catch (e) {
+    btn.disabled = false;
+    return alert("Your edit could not be sent (no connection?). Nothing changed; try again.");
+  }
+  render(); schedule();
 }
 
 async function askAgent(folder, instruction, btn) {
@@ -377,6 +408,13 @@ function render() {
     const el = document.getElementById(b.dataset.more); el.classList.toggle("open");
     b.textContent = el.classList.contains("open") ? "show less" : "read the whole email";
   });
+  main.querySelectorAll("[data-hedit]").forEach(b => b.onclick = () => { editing.add("h:" + b.dataset.hedit); render() });
+  main.querySelectorAll("[data-hcancel]").forEach(b => b.onclick = () => { editing.delete("h:" + b.dataset.hcancel); render() });
+  main.querySelectorAll("[data-hsave]").forEach(b => b.onclick = () => {
+    const f = b.dataset.hsave;
+    saveHeld(f, document.getElementById("ht-" + f).value, document.getElementById("hs-" + f).value,
+             document.getElementById("hb-" + f).value, !!b.dataset.send, b);
+  });
   main.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => {
     const f = b.dataset.ask, text = document.getElementById("a-" + f).value.trim();
     if (!text) return alert("Write what the agent should do.");
@@ -476,20 +514,34 @@ function card(i) {
     }
     return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div><div class="big blue">They replied</div>${theirs}${draft}</article>`;
   }
+  const hk = "h:" + i.folder, fid = esc(i.folder);
+  if (editing.has(hk)) {
+    return `<article class="item">${head}<div class="edit">
+      <label for="ht-${fid}">to</label><input id="ht-${fid}" type="email" inputmode="email" value="${esc(i.to)}" placeholder="general address published on their site">
+      <label for="hs-${fid}">subject</label><input id="hs-${fid}" value="${esc(i.subject)}">
+      <label for="hb-${fid}">email</label><textarea id="hb-${fid}">${esc(i.body)}</textarea></div>
+      <div class="actions3"><button class="send" type="button" data-hsave="${fid}" data-send="1">Save and send</button>
+      <button type="button" data-hsave="${fid}">Save</button><button type="button" data-hcancel="${fid}">Cancel</button></div></article>`;
+  }
+  const emailView = i.body ? `<div class="facts">to <b>${esc(i.to || "no address yet")}</b>${i.attach ? `<br>attached <b>${esc(i.attach)} services PDF</b>` : ""}</div>
+    <div class="body" id="hb-view-${fid}">${esc(i.body)}</div><button class="more" type="button" data-more="hb-view-${fid}">read the whole email</button>
+    <button class="editlink" type="button" data-hedit="${fid}">edit the email</button>` : "";
   const sentText = i.fixing || asked[i.folder];
   const helper = sentText
-    ? `<div class="working"><b>With the agent.</b> It comes back in To approve when fixed, or here with a note.<small>You asked: ${esc(sentText)}</small></div>`
+    ? (sentText.startsWith("Edited by you")
+      ? `<div class="working"><b>Saved and approved.</b> Waiting for your PC to check and queue it.<small>If it cannot go out yet, you get a notification saying why.</small></div>`
+      : `<div class="working"><b>With the agent.</b> It comes back in To approve when fixed, or here with a note.<small>You asked: ${esc(sentText)}</small></div>`)
     : `<div class="ask"><textarea id="a-${esc(i.folder)}" aria-label="Instruction for the agent"
         placeholder="Tell the agent what to do, for example: use their other address, check the archive page again, make it shorter, send it after all"></textarea>
         <div class="row2"><button class="primary" type="button" data-ask="${esc(i.folder)}">Send to agent</button>
         <button type="button" data-drop="${esc(i.folder)}">Drop this lead</button></div></div>`;
   return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div>
-    <div class="big ${i.state === "fix" ? "warn" : ""}">${i.state === "fix" ? "Needs a fix" : "Skipped"}</div><div class="note">${esc(i.note)}</div>${helper}</article>`;
+    <div class="big ${i.state === "fix" ? "warn" : ""}">${i.state === "fix" ? "Needs a fix" : "Skipped"}</div><div class="note">${esc(i.note)}</div>${emailView}${helper}</article>`;
 }
 
 document.getElementById("refresh").onclick = load;
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 7;
+const VERSION = 8;
 if ("serviceWorker" in navigator) {
   // a new version installs itself and the app reloads once, so a home-screen app never stays on an old version
   const hadController = !!navigator.serviceWorker.controller;
