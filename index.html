@@ -365,7 +365,7 @@ function render() {
     decide(item, b.dataset.act, [...b.parentElement.querySelectorAll("button")]);
   });
   renderPush();
-  document.getElementById("foot").textContent = data ? `sending as ${data.mailbox} · ${data.daily_cap} a day, ${data.send_days.join(", ")}` : "";
+  document.getElementById("foot").textContent = (data ? `sending as ${data.mailbox} · ${data.daily_cap} a day, ${data.send_days.join(", ")} · ` : "") + `version ${VERSION}`;
 }
 
 const SEG = { "funded-project": "Funded projects", institution: "Museums, archives, libraries", "eaa-company": "Companies (accessibility act)",
@@ -445,7 +445,16 @@ function card(i) {
 
 document.getElementById("refresh").onclick = load;
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+const VERSION = 5;
+if ("serviceWorker" in navigator) {
+  // a new version installs itself and the app reloads once, so a home-screen app never stays on an old version
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg => {
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update().catch(() => {}) });
+  }).catch(() => {});
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController && !reloaded) { reloaded = true; location.reload() } });
+}
 render();
 load();
 </script>
