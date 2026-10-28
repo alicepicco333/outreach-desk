@@ -113,6 +113,11 @@
   .edit textarea { min-height: 22em; resize: vertical }
   .editlink { font: 500 12px var(--mono); color: var(--blue); background: none; border: 0; padding: 12px 0 0;
               cursor: pointer; display: block }
+  .ask textarea { width: 100%; min-height: 6.5em; margin-top: 12px; font: 16px/1.45 var(--sans); color: var(--ink);
+                  background: var(--card); border: 1px solid var(--ink); border-radius: 0; padding: 10px 12px; resize: vertical }
+  .ask .row2 { margin-top: 8px }
+  .working { margin-top: 12px; padding: 12px 14px; border-left: 4px solid var(--blue); background: var(--card); font-size: 15px }
+  .working small { display: block; font: 400 11.5px/1.5 var(--mono); color: var(--muted); margin-top: 4px; white-space: pre-wrap }
   .pushbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin: 14px 0 0;
              padding: 12px 14px; background: var(--card); font-size: 14px }
   .pushbar button { flex: none; font: 600 14px var(--sans); background: var(--ink); color: var(--bg); border: 0;
@@ -158,6 +163,7 @@ let tab = store.get("od-tab", "approve");
 let decided = store.get("od-decided", {});      // token -> { action, at } until the PC confirms
 let timer = null;
 const editing = new Set();                       // cards open for editing (not saved between visits)
+let asked = store.get("od-asked", {});           // folder -> instruction sent to the fixer, until the PC confirms
 
 // ---------- setup: the private link carries the key after the #, which never reaches any server
 function readLink(text) {
@@ -199,6 +205,10 @@ async function load() {
     for (const t of Object.keys(decided)) if (!waiting.has(t) && decided[t].confirmedSeen) delete decided[t];
     for (const t of Object.keys(decided)) if (!waiting.has(t)) decided[t].confirmedSeen = true;
     store.set("od-decided", decided);
+    const held = new Map(data.items.filter(i => GROUP[i.state] === "held").map(i => [i.folder, i]));
+    for (const f of Object.keys(asked)) if (!held.has(f) || (asked[f + ":seen"] && !held.get(f).fixing)) { delete asked[f]; delete asked[f + ":seen"] }
+    for (const f of Object.keys(asked)) if (held.get(f)?.fixing) asked[f + ":seen"] = true;
+    store.set("od-asked", asked);
   }
   render();
   schedule();
@@ -234,6 +244,25 @@ async function saveEdit(item, subject, body, btn) {
   }
   render();
   schedule();
+}
+
+async function askAgent(folder, instruction, btn) {
+  btn.disabled = true;
+  try {
+    const key = await crypto.subtle.importKey("raw", b64u(cfg.k), "AES-GCM", false, ["encrypt"]);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key,
+      new TextEncoder().encode(JSON.stringify({ folder, instruction }))));
+    const blob = new Uint8Array(12 + ct.length); blob.set(iv); blob.set(ct, 12);
+    let bin = ""; blob.forEach(x => bin += String.fromCharCode(x));
+    const r = await fetch(`${NTFY}/${cfg.a}`, { method: "POST", body: "fix:" + btoa(bin) });
+    if (!r.ok) throw new Error(r.status);
+    asked[folder] = instruction; store.set("od-asked", asked);
+  } catch (e) {
+    btn.disabled = false;
+    return alert("Could not reach your PC's channel (no connection?). Nothing changed; try again.");
+  }
+  render(); schedule();
 }
 
 async function decide(item, action, btns) {
@@ -348,6 +377,14 @@ function render() {
     const el = document.getElementById(b.dataset.more); el.classList.toggle("open");
     b.textContent = el.classList.contains("open") ? "show less" : "read the whole email";
   });
+  main.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => {
+    const f = b.dataset.ask, text = document.getElementById("a-" + f).value.trim();
+    if (!text) return alert("Write what the agent should do.");
+    askAgent(f, text, b);
+  });
+  main.querySelectorAll("[data-drop]").forEach(b => b.onclick = () => {
+    if (confirm("Drop this lead? It will not be contacted.")) askAgent(b.dataset.drop, "Drop this lead: Alice does not want to contact them.", b);
+  });
   main.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => { editing.add(b.dataset.edit); render() });
   main.querySelectorAll("[data-cancel]").forEach(b => b.onclick = () => { editing.delete(b.dataset.cancel); render() });
   main.querySelectorAll("[data-save]").forEach(b => b.onclick = () => {
@@ -439,13 +476,20 @@ function card(i) {
     }
     return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div><div class="big blue">They replied</div>${theirs}${draft}</article>`;
   }
+  const sentText = i.fixing || asked[i.folder];
+  const helper = sentText
+    ? `<div class="working"><b>With the agent.</b> It comes back in To approve when fixed, or here with a note.<small>You asked: ${esc(sentText)}</small></div>`
+    : `<div class="ask"><textarea id="a-${esc(i.folder)}" aria-label="Instruction for the agent"
+        placeholder="Tell the agent what to do, for example: use their other address, check the archive page again, make it shorter, send it after all"></textarea>
+        <div class="row2"><button class="primary" type="button" data-ask="${esc(i.folder)}">Send to agent</button>
+        <button type="button" data-drop="${esc(i.folder)}">Drop this lead</button></div></div>`;
   return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div>
-    <div class="big ${i.state === "fix" ? "warn" : ""}">${i.state === "fix" ? "Needs a fix" : "Skipped"}</div><div class="note">${esc(i.note)}</div></article>`;
+    <div class="big ${i.state === "fix" ? "warn" : ""}">${i.state === "fix" ? "Needs a fix" : "Skipped"}</div><div class="note">${esc(i.note)}</div>${helper}</article>`;
 }
 
 document.getElementById("refresh").onclick = load;
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 6;
+const VERSION = 7;
 if ("serviceWorker" in navigator) {
   // a new version installs itself and the app reloads once, so a home-screen app never stays on an old version
   const hadController = !!navigator.serviceWorker.controller;
