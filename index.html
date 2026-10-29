@@ -60,6 +60,7 @@
   .body { margin-top: 12px; background: var(--card); padding: 14px; font-size: 15px; white-space: pre-wrap;
           word-break: break-word; max-height: 9.6em; overflow: hidden; position: relative }
   .body.open { max-height: none }
+  .body:not(.open) { cursor: pointer }
   .body:not(.open)::after { content: ""; position: absolute; inset: auto 0 0 0; height: 3em;
                             background: linear-gradient(transparent, var(--card)) }
   .more { font: 500 12px var(--mono); color: var(--blue); background: none; border: 0; padding: 10px 0 0; cursor: pointer }
@@ -88,6 +89,7 @@
   #newbar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 20; max-width: calc(100% - 32px);
     padding: 12px 16px; border: 0; background: var(--blue); color: var(--on-blue); font: inherit; font-size: 14px; cursor: pointer }
   #newbar[hidden] { display: none }
+  body:has(#newbar:not([hidden])) #main { padding-bottom: 72px }
   .banner { margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--warn); color: var(--warn); font-size: 14px }
   .quote { margin-top: 12px; padding: 12px 14px; border-left: 3px solid var(--ink); background: var(--card);
            font-size: 15px; white-space: pre-wrap; word-break: break-word }
@@ -162,13 +164,15 @@ const NTFY = "https://ntfy.sh";
 const TABS = [
   { id: "approve", label: "to approve", title: "To approve", lede: "Read each email. Send queues it; nothing leaves before its send day." },
   { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day: {schedule}." },
-  { id: "sent", label: "sent", title: "Sent", lede: "Sent from your outreach mailbox. One follow-up comes back here for approval after 10 days." },
+  { id: "sent", label: "sent", title: "Sent", lede: "Every email that went out, newest first, exactly as it was sent. Tap one to read it all. One follow-up comes back for approval after 10 days." },
   { id: "replies", label: "replies", title: "Replies", lede: "Answers and bounces. Read them in Gmail." },
   { id: "held", label: "held", title: "Held", lede: "Drafts that need a fix, and emails you skipped." },
   { id: "agents", label: "agents", title: "Agents", lede: "What the agents are doing with your Held instructions, what they decided, and when each agent last ran." },
   { id: "results", label: "results", title: "Results", lede: "What gets answers: first emails sent, and how many replied, by kind of organisation and by service track." },
 ];
 const GROUP = { approve: "approve", queued: "queued", sent: "sent", replied: "replies", bounced: "replies", fix: "held", skipped: "held" };
+const WENT_OUT = new Set(["sent", "replied", "bounced"]);       // the Sent tab lists every email that went out
+function inTab(i, t) { return GROUP[i.state] === t || (t === "sent" && WENT_OUT.has(i.state)) }
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d } catch (e) { return d } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch (e) {} },
@@ -447,7 +451,7 @@ function scheduleText() {
 function counts() {
   const c = { approve: 0, queued: 0, sent: 0, replies: 0, held: 0, results: data?.results?.total?.sent || 0,
               agents: (data?.agents?.jobs || []).length };
-  (data?.items || []).forEach(i => c[GROUP[i.state]]++);
+  (data?.items || []).forEach(i => { c[GROUP[i.state]]++; if (GROUP[i.state] !== "sent" && WENT_OUT.has(i.state)) c.sent++ });
   return c;
 }
 
@@ -476,14 +480,15 @@ function render() {
   const T = TABS.find(t => t.id === tab);
   if (tab === "results") { main.innerHTML = resultsHTML(T); renderPush(); return }
   if (tab === "agents") { main.innerHTML = agentsHTML(T); renderPush(); return }
-  const items = (data?.items || []).filter(i => GROUP[i.state] === tab);
+  const items = (data?.items || []).filter(i => inTab(i, tab));
+  if (tab === "sent") items.sort((a, b) => (b.sent_date || b.sent_at || "").localeCompare(a.sent_date || a.sent_at || ""));
   let html = `<h1>${T.title}</h1><p class="lede">${T.lede.replace("{schedule}", scheduleText())}</p>`;
   if (data && (Date.now() - new Date(data.generated_at)) > 3 * 3600e3)
     html += `<div class="banner">Last update from your PC was ${ago(data.generated_at)}. Is it on? Decisions are kept and applied when it is back.</div>`;
   if (tab === "approve" && data?.in_line) html += `<p class="note">${data.in_line} more checked draft${data.in_line > 1 ? "s" : ""} in line: they come here as you decide.</p>`;
   html += `<div class="list">`;
   if (!items.length) html += `<div class="empty">${tab === "approve" ? "Nothing to approve right now." : "Nothing here yet."}</div>`;
-  for (const i of items) html += card(i);
+  for (const i of items) html += tab === "sent" ? sentCard(i) : card(i);
   html += `</div>`;
   const y = scrollY;
   main.innerHTML = html;
@@ -498,6 +503,10 @@ function render() {
     if (el.classList.contains("open")) opened.add(b.dataset.more); else opened.delete(b.dataset.more);
     sess.set("od-opened", [...opened]);
   });
+  main.querySelectorAll(".body[id]").forEach(el => el.onclick = () => {
+    if (!el.classList.contains("open")) main.querySelector(`[data-more="${el.id}"]`)?.click();
+  });
+  main.querySelectorAll("[data-goto]").forEach(b => b.onclick = () => { tab = b.dataset.goto; store.set("od-tab", tab); render(); window.scrollTo(0, 0) });
   main.querySelectorAll("[data-hedit]").forEach(b => b.onclick = () => { editing.add("h:" + b.dataset.hedit); render() });
   main.querySelectorAll("[data-hcancel]").forEach(b => b.onclick = () => { const f = b.dataset.hcancel; editing.delete("h:" + f); forget("ht-" + f, "hs-" + f, "hb-" + f); render() });
   main.querySelectorAll("[data-hsave]").forEach(b => b.onclick = () => {
@@ -577,6 +586,28 @@ function agentsHTML(T) {
   return h;
 }
 
+function sentBody(i) {
+  if (!i.sent_body) return "";
+  return `${i.sent_reconstructed ? `<div class="note warn">No copy of this email was kept: this is rebuilt from the draft and may differ slightly from what went out.</div>` : ""}
+    <div class="body" id="sb-${esc(i.key)}">${esc(i.sent_body)}</div>
+    <button class="more" type="button" data-more="sb-${esc(i.key)}">read the whole email</button>`;
+}
+// one email that went out, as sent: also the ones that got an answer or bounced (their reply is folded under it)
+function sentCard(i) {
+  const fu = i.kind === "followup";
+  const head = `<div class="top"><div class="org">${esc(i.org)}</div><div class="tag ${fu ? "blue" : ""}">${fu ? "follow-up" : "first email"} · ${esc(i.lang)}</div></div>`;
+  const at = i.sent_date || i.sent_at;
+  const facts = `<div class="facts">sent <b>${esc(when(at))}</b><br>to <b>${esc(i.sent_to || i.to)}</b>${i.sent_attach ? `<br>attached <b>${esc(i.sent_attach)}</b>` : ""}${i.state === "sent" && i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}</div>`;
+  let status = "";
+  if (i.state === "replied") {
+    const r = i.their_reply ? (i.their_reply.split("\n\n").slice(1).join("\n\n") || i.their_reply) : "";
+    status = `<div class="big blue">They replied</div>` + (r ? `<div class="label">their reply</div><div class="body" id="sr-${esc(i.key)}">${esc(r)}</div>
+      <button class="more" type="button" data-more="sr-${esc(i.key)}">read the whole email</button>` : "");
+  } else if (i.state === "bounced") status = `<div class="big warn">Bounced: address not working</div>`;
+  const links = `<div class="row2">${i.sent_gmail ? `<a href="${esc(i.sent_gmail)}" target="_blank" rel="noopener">open in Gmail</a>` : ""}${i.state !== "sent" ? `<button type="button" data-goto="replies">see in Replies</button>` : ""}</div>`;
+  return `<article class="item">${head}<div class="sub">${esc(i.sent_subject || i.subject)}</div>${facts}${status}${i.state === "replied" && i.sent_body ? `<div class="label">what you sent</div>` : ""}${sentBody(i)}${links}</article>`;
+}
+
 function card(i) {
   const fu = i.kind === "followup";
   const warns = (i.warnings || []).map(w => `<div class="note warn">${esc(w)}</div>`).join("");
@@ -610,8 +641,7 @@ function card(i) {
   }
   if (i.state === "queued")
     return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div><div class="big blue">Goes out ${esc(slotText(i.slot))}</div><div class="facts">to ${esc(i.to)}</div></article>`;
-  const sentView = i.sent_body ? `<div class="body" id="sb-${esc(i.key)}">${esc(i.sent_body)}</div>
-      <button class="more" type="button" data-more="sb-${esc(i.key)}">read the whole email</button>` : "";
+  const sentView = sentBody(i);
   if (i.state === "sent")
     return `<article class="item">${head}<div class="sub">${esc(i.sent_subject || i.subject)}</div><div class="big">Sent ${esc(when(i.sent_at))}</div>
       <div class="facts">to <b>${esc(i.sent_to || i.to)}</b>${i.sent_attach ? `<br>attached <b>${esc(i.sent_attach)}</b>` : ""}${i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}</div>${sentView}</article>`;
@@ -662,7 +692,7 @@ function card(i) {
 document.getElementById("refresh").onclick = async () => { await load(); render() };   // asked for: show it now
 document.getElementById("newbar").onclick = () => { if (updateReady) location.reload(); else render() };
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 15;
+const VERSION = 16;
 if ("serviceWorker" in navigator) {
   // a new version installs itself; the app never reloads by itself (that wiped what Alice was typing): a bar
   // offers the reload, and what is open or typed comes back from sessionStorage
