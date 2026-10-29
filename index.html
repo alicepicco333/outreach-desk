@@ -163,7 +163,7 @@
 const NTFY = "https://ntfy.sh";
 const TABS = [
   { id: "approve", label: "to approve", title: "To approve", lede: "Read each email. Send queues it; nothing leaves before its send day." },
-  { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day: {schedule}. Tap one to read exactly what will go out." },
+  { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day: {schedule}. First emails to funded leads go out first, then the rest in order of approval. Tap one to read exactly what will go out." },
   { id: "sent", label: "sent", title: "Sent", lede: "Every email that went out, newest first, exactly as it was sent. Tap one to read it all. One follow-up comes back for approval after 10 days." },
   { id: "replies", label: "replies", title: "Replies", lede: "Answers and bounces. Read them in Gmail." },
   { id: "held", label: "held", title: "Held", lede: "Drafts that need a fix, and emails you skipped." },
@@ -444,7 +444,7 @@ function scheduleText() {
     : days.map(d => FULL[d]).join(days.length === 2 ? " and " : ", ");
   const [a, b] = (data?.send_window || "09:00-11:59").split("-");
   const end = b === "11:59" ? "12:00" : b;
-  const n = data?.daily_cap || 3;
+  const n = data?.daily_cap || 5;
   return `${n} email${n === 1 ? "" : "s"} a day, ${dayText}, ${a} to ${end}`;
 }
 
@@ -482,7 +482,8 @@ function render() {
   if (tab === "agents") { main.innerHTML = agentsHTML(T); renderPush(); return }
   const items = (data?.items || []).filter(i => inTab(i, tab));
   if (tab === "sent") items.sort((a, b) => (b.sent_date || b.sent_at || "").localeCompare(a.sent_date || a.sent_at || ""));
-  if (tab === "queued") items.sort((a, b) => (a.slot || "9").localeCompare(b.slot || "9") || (a.approved_at || "").localeCompare(b.approved_at || ""));
+  // the sender's own order (send_order in outreach_send.py): by planned day, then its place in the queue
+  if (tab === "queued") items.sort((a, b) => (a.slot || "9").localeCompare(b.slot || "9") || (a.order ?? 999) - (b.order ?? 999) || (a.kind === "first" ? 0 : 1) - (b.kind === "first" ? 0 : 1));
   let html = `<h1>${T.title}</h1><p class="lede">${T.lede.replace("{schedule}", scheduleText())}</p>`;
   if (data && (Date.now() - new Date(data.generated_at)) > 3 * 3600e3)
     html += `<div class="banner">Last update from your PC was ${ago(data.generated_at)}. Is it on? Decisions are kept and applied when it is back.</div>`;
@@ -642,7 +643,7 @@ function card(i) {
   }
   if (i.state === "queued") {
     // the approved version, built exactly as the sender will send it; if the draft changed since, no text is shown
-    const facts = `<div class="facts">to <b>${esc(i.to)}</b>${i.attach ? `<br>attached <b>${esc(i.attach)}</b>` : ""}${i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}${i.approved_at ? `<br>approved ${esc(when(i.approved_at))}` : ""}</div>`;
+    const facts = `<div class="facts">to <b>${esc(i.to)}</b>${i.attach ? `<br>attached <b>${esc(i.attach)}</b>` : ""}${i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}${i.funded ? `<br>funded lead: goes before the others` : ""}${i.approved_at ? `<br>approved ${esc(when(i.approved_at))}` : ""}</div>`;
     const text = i.changed
       ? `<div class="note warn">${i.changed === "edited"
           ? "This email was changed after you approved it, so it will not go out as approved: the new version comes back to To approve."
@@ -702,7 +703,7 @@ function card(i) {
 document.getElementById("refresh").onclick = async () => { await load(); render() };   // asked for: show it now
 document.getElementById("newbar").onclick = () => { if (updateReady) location.reload(); else render() };
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 17;
+const VERSION = 18;
 if ("serviceWorker" in navigator) {
   // a new version installs itself; the app never reloads by itself (that wiped what Alice was typing): a bar
   // offers the reload, and what is open or typed comes back from sessionStorage
