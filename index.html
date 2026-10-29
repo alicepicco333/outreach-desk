@@ -163,7 +163,7 @@
 const NTFY = "https://ntfy.sh";
 const TABS = [
   { id: "approve", label: "to approve", title: "To approve", lede: "Read each email. Send queues it; nothing leaves before its send day." },
-  { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day: {schedule}." },
+  { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day: {schedule}. Tap one to read exactly what will go out." },
   { id: "sent", label: "sent", title: "Sent", lede: "Every email that went out, newest first, exactly as it was sent. Tap one to read it all. One follow-up comes back for approval after 10 days." },
   { id: "replies", label: "replies", title: "Replies", lede: "Answers and bounces. Read them in Gmail." },
   { id: "held", label: "held", title: "Held", lede: "Drafts that need a fix, and emails you skipped." },
@@ -482,6 +482,7 @@ function render() {
   if (tab === "agents") { main.innerHTML = agentsHTML(T); renderPush(); return }
   const items = (data?.items || []).filter(i => inTab(i, tab));
   if (tab === "sent") items.sort((a, b) => (b.sent_date || b.sent_at || "").localeCompare(a.sent_date || a.sent_at || ""));
+  if (tab === "queued") items.sort((a, b) => (a.slot || "9").localeCompare(b.slot || "9") || (a.approved_at || "").localeCompare(b.approved_at || ""));
   let html = `<h1>${T.title}</h1><p class="lede">${T.lede.replace("{schedule}", scheduleText())}</p>`;
   if (data && (Date.now() - new Date(data.generated_at)) > 3 * 3600e3)
     html += `<div class="banner">Last update from your PC was ${ago(data.generated_at)}. Is it on? Decisions are kept and applied when it is back.</div>`;
@@ -639,8 +640,17 @@ function card(i) {
     }
     return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div>${facts}${body}${foot}</article>`;
   }
-  if (i.state === "queued")
-    return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div><div class="big blue">Goes out ${esc(slotText(i.slot))}</div><div class="facts">to ${esc(i.to)}</div></article>`;
+  if (i.state === "queued") {
+    // the approved version, built exactly as the sender will send it; if the draft changed since, no text is shown
+    const facts = `<div class="facts">to <b>${esc(i.to)}</b>${i.attach ? `<br>attached <b>${esc(i.attach)}</b>` : ""}${i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}${i.approved_at ? `<br>approved ${esc(when(i.approved_at))}` : ""}</div>`;
+    const text = i.changed
+      ? `<div class="note warn">${i.changed === "edited"
+          ? "This email was changed after you approved it, so it will not go out as approved: the new version comes back to To approve."
+          : "This email no longer passes the sender's checks, so it will not go out as approved: it comes back to be fixed."}</div>`
+      : i.body ? `<div class="body" id="qb-${esc(i.key)}">${esc(i.body)}</div>
+        <button class="more" type="button" data-more="qb-${esc(i.key)}">read the whole email</button>` : "";
+    return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div><div class="big blue">Goes out ${esc(slotText(i.slot))}</div>${facts}${text}</article>`;
+  }
   const sentView = sentBody(i);
   if (i.state === "sent")
     return `<article class="item">${head}<div class="sub">${esc(i.sent_subject || i.subject)}</div><div class="big">Sent ${esc(when(i.sent_at))}</div>
@@ -692,7 +702,7 @@ function card(i) {
 document.getElementById("refresh").onclick = async () => { await load(); render() };   // asked for: show it now
 document.getElementById("newbar").onclick = () => { if (updateReady) location.reload(); else render() };
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 16;
+const VERSION = 17;
 if ("serviceWorker" in navigator) {
   // a new version installs itself; the app never reloads by itself (that wiped what Alice was typing): a bar
   // offers the reload, and what is open or typed comes back from sessionStorage
