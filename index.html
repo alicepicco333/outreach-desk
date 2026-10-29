@@ -85,6 +85,9 @@
                     color: var(--ink); border: 1px solid var(--ink); border-radius: 0; margin: 12px 0 }
   .setup button { font: 600 16px var(--sans); background: var(--blue); color: var(--on-blue); border: 0;
                   min-height: 48px; padding: 0 20px; cursor: pointer }
+  #newbar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 20; max-width: calc(100% - 32px);
+    padding: 12px 16px; border: 0; background: var(--blue); color: var(--on-blue); font: inherit; font-size: 14px; cursor: pointer }
+  #newbar[hidden] { display: none }
   .banner { margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--warn); color: var(--warn); font-size: 14px }
   .quote { margin-top: 12px; padding: 12px 14px; border-left: 3px solid var(--ink); background: var(--card);
            font-size: 15px; white-space: pre-wrap; word-break: break-word }
@@ -149,6 +152,7 @@
   </div>
 </header>
 <div class="wrap" id="push"></div>
+<button id="newbar" type="button" hidden></button>
 <main class="wrap" id="main"></main>
 <footer class="wrap" id="foot"></footer>
 
@@ -174,7 +178,35 @@ let data = store.get("od-last", null);
 let tab = store.get("od-tab", "approve");
 let decided = store.get("od-decided", {});      // token -> { action, at } until the PC confirms
 let timer = null;
-const editing = new Set();                       // cards open for editing (not saved between visits)
+// what Alice has open or typed lives in sessionStorage, so a reload never loses it
+const sess = {
+  get(k, d) { try { const v = sessionStorage.getItem(k); return v ? JSON.parse(v) : d } catch (e) { return d } },
+  set(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)) } catch (e) {} },
+};
+const editing = new Set(sess.get("od-editing", []));   // cards open for editing
+const opened = new Set(sess.get("od-opened", []));     // emails expanded with "read the whole email"
+const drafts = sess.get("od-drafts", {});              // field id -> text typed but not sent yet
+function forget(...ids) { ids.forEach(id => delete drafts[id]); sess.set("od-drafts", drafts) }
+// background updates never pull the page from under Alice: they wait while she types, edits, reads an
+// expanded email or scrolled/typed in the last minute, and a bar offers them instead
+let lastActive = 0, pendingRender = false, updateReady = false;
+["scroll", "touchmove", "keydown", "input", "wheel"].forEach(ev => addEventListener(ev, () => { lastActive = Date.now() }, { passive: true }));
+function busy() {
+  const a = document.activeElement;
+  const main = document.getElementById("main");
+  return !!(a && /^(TEXTAREA|INPUT|SELECT)$/.test(a.tagName)) || !!main.querySelector(".edit, .open")
+    || [...main.querySelectorAll(".ask textarea")].some(t => t.value.trim()) || Date.now() - lastActive < 60000;
+}
+function paint() {
+  if (cfg && data) document.getElementById("updated").textContent = `updated ${ago(data.generated_at)}`;
+  if (busy()) { pendingRender = true; showBar() } else { pendingRender = false; render() }
+}
+function showBar() {
+  const bar = document.getElementById("newbar");
+  bar.hidden = !(pendingRender || updateReady);
+  bar.textContent = updateReady ? "New version of the app. Tap to reload (what you typed is kept)." : "New updates. Tap to show them.";
+}
+setInterval(() => { if (pendingRender && !busy()) { pendingRender = false; render() } }, 3000);
 let asked = store.get("od-asked", {});           // folder -> instruction sent to the fixer, until the PC confirms
 const DROPPED = "Dropped by you.";
 
@@ -226,7 +258,7 @@ async function load() {
     for (const f of Object.keys(asked)) if (asked[f] === DROPPED && held.has(f) && new Date(data.generated_at) - (asked[f + ":at"] || 0) > 600000) { delete asked[f]; delete asked[f + ":at"]; delete asked[f + ":seen"] }
     store.set("od-asked", asked);
   }
-  render();
+  paint();
   schedule();
 }
 
@@ -251,7 +283,7 @@ async function saveEdit(item, subject, body, btn) {
     if (msg.length > 4000) { btn.disabled = false; return alert("This email is too long to send from the app (about 2,500 characters at most). Shorten it a little.") }
     const r = await fetch(`${NTFY}/${cfg.a}`, { method: "POST", body: msg });
     if (!r.ok) throw new Error(r.status);
-    editing.delete(item.token);
+    editing.delete(item.token); forget("s-" + item.token, "t-" + item.token);
     decided[item.token] = { action: "edit", at: Date.now(), org: item.org };
     store.set("od-decided", decided);
   } catch (e) {
@@ -280,7 +312,7 @@ async function saveHeld(folder, to, subject, body, send, btn) {
     if (msg.length > 4000) { btn.disabled = false; return alert("This email is too long to send from the app (about 2,500 characters at most). Shorten it a little.") }
     const r = await fetch(`${NTFY}/${cfg.a}`, { method: "POST", body: msg });
     if (!r.ok) throw new Error(r.status);
-    editing.delete("h:" + folder);
+    editing.delete("h:" + folder); forget("ht-" + folder, "hs-" + folder, "hb-" + folder);
     if (send) { asked[folder] = "Edited by you: approve and send."; asked[folder + ":at"] = Date.now(); store.set("od-asked", asked) }
   } catch (e) {
     btn.disabled = false;
@@ -300,7 +332,7 @@ async function askAgent(folder, instruction, btn) {
     let bin = ""; blob.forEach(x => bin += String.fromCharCode(x));
     const r = await fetch(`${NTFY}/${cfg.a}`, { method: "POST", body: "fix:" + btoa(bin) });
     if (!r.ok) throw new Error(r.status);
-    asked[folder] = instruction; store.set("od-asked", asked);
+    asked[folder] = instruction; store.set("od-asked", asked); forget("a-" + folder);
   } catch (e) {
     btn.disabled = false;
     return alert("Could not reach your PC's channel (no connection?). Nothing changed; try again.");
@@ -433,6 +465,7 @@ function render() {
     };
     return;
   }
+  pendingRender = false; showBar();
   const c = counts();
   tabs.innerHTML = TABS.map(t => `<button role="tab" type="button" data-tab="${t.id}" aria-selected="${t.id === tab}"
     class="${(t.id === "approve" && c.approve) || (t.id === "replies" && c.replies) || (t.id === "agents" && c.agents) ? "hot" : ""}">${t.label}<span class="n">${c[t.id]}</span></button>`).join("");
@@ -451,13 +484,21 @@ function render() {
   if (!items.length) html += `<div class="empty">${tab === "approve" ? "Nothing to approve right now." : "Nothing here yet."}</div>`;
   for (const i of items) html += card(i);
   html += `</div>`;
+  const y = scrollY;
   main.innerHTML = html;
+  sess.set("od-editing", [...editing]);
+  for (const id of Object.keys(drafts)) { const el = document.getElementById(id); if (el && "value" in el) el.value = drafts[id] }
+  main.querySelectorAll("textarea[id], input[id]").forEach(el => el.addEventListener("input", () => { drafts[el.id] = el.value; sess.set("od-drafts", drafts) }));
+  for (const id of opened) { const el = document.getElementById(id), b = main.querySelector(`[data-more="${id}"]`); if (el && b) { el.classList.add("open"); b.textContent = "show less" } }
+  scrollTo(0, y);
   main.querySelectorAll("[data-more]").forEach(b => b.onclick = () => {
     const el = document.getElementById(b.dataset.more); el.classList.toggle("open");
     b.textContent = el.classList.contains("open") ? "show less" : "read the whole email";
+    if (el.classList.contains("open")) opened.add(b.dataset.more); else opened.delete(b.dataset.more);
+    sess.set("od-opened", [...opened]);
   });
   main.querySelectorAll("[data-hedit]").forEach(b => b.onclick = () => { editing.add("h:" + b.dataset.hedit); render() });
-  main.querySelectorAll("[data-hcancel]").forEach(b => b.onclick = () => { editing.delete("h:" + b.dataset.hcancel); render() });
+  main.querySelectorAll("[data-hcancel]").forEach(b => b.onclick = () => { const f = b.dataset.hcancel; editing.delete("h:" + f); forget("ht-" + f, "hs-" + f, "hb-" + f); render() });
   main.querySelectorAll("[data-hsave]").forEach(b => b.onclick = () => {
     const f = b.dataset.hsave;
     saveHeld(f, document.getElementById("ht-" + f).value, document.getElementById("hs-" + f).value,
@@ -472,7 +513,7 @@ function render() {
     if (confirm("Drop this lead? It will not be contacted.")) dropLead(b.dataset.drop, b);
   });
   main.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => { editing.add(b.dataset.edit); render() });
-  main.querySelectorAll("[data-cancel]").forEach(b => b.onclick = () => { editing.delete(b.dataset.cancel); render() });
+  main.querySelectorAll("[data-cancel]").forEach(b => b.onclick = () => { const t = b.dataset.cancel; editing.delete(t); forget("s-" + t, "t-" + t); render() });
   main.querySelectorAll("[data-save]").forEach(b => b.onclick = () => {
     const t = b.dataset.save, item = items.find(x => x.token === t);
     saveEdit(item, document.getElementById("s-" + t).value, document.getElementById("t-" + t).value, b);
@@ -614,17 +655,18 @@ function card(i) {
     <div class="big ${i.state === "fix" ? "warn" : ""}">${i.state === "fix" ? "Needs a fix" : "Skipped"}</div><div class="note">${esc(i.note)}</div>${emailView}${helper}</article>`;
 }
 
-document.getElementById("refresh").onclick = load;
+document.getElementById("refresh").onclick = async () => { await load(); render() };   // asked for: show it now
+document.getElementById("newbar").onclick = () => { if (updateReady) location.reload(); else render() };
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 13;
+const VERSION = 14;
 if ("serviceWorker" in navigator) {
-  // a new version installs itself and the app reloads once, so a home-screen app never stays on an old version
+  // a new version installs itself; the app never reloads by itself (that wiped what Alice was typing): a bar
+  // offers the reload, and what is open or typed comes back from sessionStorage
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg => {
     document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update().catch(() => {}) });
   }).catch(() => {});
-  let reloaded = false;
-  navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController && !reloaded) { reloaded = true; location.reload() } });
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController) { updateReady = true; showBar() } });
 }
 render();
 load();
