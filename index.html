@@ -268,7 +268,8 @@ function schedule() {
   timer = setTimeout(load, pending ? 6000 : 60000);
 }
 
-async function saveEdit(item, subject, body, btn) {
+async function saveEdit(item, to, subject, body, btn) {
+  if (!/^[^@\s,;]+@[^@\s,;]+\.[a-z]{2,}$/i.test(to.trim())) return alert("Add a valid To address.");
   if (!subject.trim() || body.trim().length < 200) return alert("The subject is empty or the email is too short.");
   if (!body.includes("alicepicco333.github.io/portfolio")) return alert("Keep the link to your portfolio in the email.");
   btn.disabled = true;
@@ -276,14 +277,14 @@ async function saveEdit(item, subject, body, btn) {
     const key = await crypto.subtle.importKey("raw", b64u(cfg.k), "AES-GCM", false, ["encrypt"]);
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key,
-      new TextEncoder().encode(JSON.stringify({ subject: subject.trim(), body }))));
+      new TextEncoder().encode(JSON.stringify({ to: to.trim(), subject: subject.trim(), body }))));
     const blob = new Uint8Array(12 + ct.length); blob.set(iv); blob.set(ct, 12);
     let bin = ""; blob.forEach(x => bin += String.fromCharCode(x));
     const msg = `edit:${item.token}:` + btoa(bin);
     if (msg.length > 4000) { btn.disabled = false; return alert("This email is too long to send from the app (about 2,500 characters at most). Shorten it a little.") }
     const r = await fetch(`${NTFY}/${cfg.a}`, { method: "POST", body: msg });
     if (!r.ok) throw new Error(r.status);
-    editing.delete(item.token); forget("s-" + item.token, "t-" + item.token);
+    editing.delete(item.token); forget("r-" + item.token, "s-" + item.token, "t-" + item.token);
     decided[item.token] = { action: "edit", at: Date.now(), org: item.org };
     store.set("od-decided", decided);
   } catch (e) {
@@ -296,7 +297,7 @@ async function saveEdit(item, subject, body, btn) {
 
 async function saveHeld(folder, to, subject, body, send, btn) {
   if (send) {
-    if (!/^[^@\s,;]+@[^@\s,;]+\.[a-z]{2,}$/i.test(to.trim())) return alert("Add a valid To address (a general address published on their site).");
+    if (!/^[^@\s,;]+@[^@\s,;]+\.[a-z]{2,}$/i.test(to.trim())) return alert("Add a valid To address: their general address, or the person you are writing to.");
     if (!subject.trim() || body.trim().length < 200) return alert("The subject is empty or the email is too short.");
     if (!body.includes("alicepicco333.github.io/portfolio")) return alert("Keep the link to your portfolio in the email.");
   }
@@ -513,10 +514,11 @@ function render() {
     if (confirm("Drop this lead? It will not be contacted.")) dropLead(b.dataset.drop, b);
   });
   main.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => { editing.add(b.dataset.edit); render() });
-  main.querySelectorAll("[data-cancel]").forEach(b => b.onclick = () => { const t = b.dataset.cancel; editing.delete(t); forget("s-" + t, "t-" + t); render() });
+  main.querySelectorAll("[data-cancel]").forEach(b => b.onclick = () => { const t = b.dataset.cancel; editing.delete(t); forget("r-" + t, "s-" + t, "t-" + t); render() });
   main.querySelectorAll("[data-save]").forEach(b => b.onclick = () => {
     const t = b.dataset.save, item = items.find(x => x.token === t);
-    saveEdit(item, document.getElementById("s-" + t).value, document.getElementById("t-" + t).value, b);
+    saveEdit(item, document.getElementById("r-" + t).value, document.getElementById("s-" + t).value,
+             document.getElementById("t-" + t).value, b);
   });
   main.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => {
     const it = items.find(x => x.key === b.dataset.copy);
@@ -577,14 +579,16 @@ function agentsHTML(T) {
 
 function card(i) {
   const fu = i.kind === "followup";
+  const warns = (i.warnings || []).map(w => `<div class="note warn">${esc(w)}</div>`).join("");
   const head = `<div class="top"><div class="org">${esc(i.org)}</div><div class="tag ${fu ? "blue" : ""}">${fu ? "follow-up" : "first email"} · ${esc(i.lang)}</div></div>`;
   if (i.state === "approve") {
     const d = decided[i.token];
-    const facts = `<div class="facts">to <b>${esc(i.to)}</b>${i.attach ? `<br>attached <b>${esc(i.attach)}</b>` : ""}</div>`;
+    const facts = `<div class="facts">to <b>${esc(i.to)}</b>${i.attach ? `<br>attached <b>${esc(i.attach)}</b>` : ""}</div>${warns}`;
     const body = `<div class="body" id="b-${esc(i.token)}">${esc(i.body)}</div><button class="more" type="button" data-more="b-${esc(i.token)}">read the whole email</button>`;
     let foot;
     if (!d && editing.has(i.token)) {
       return `<article class="item">${head}<div class="edit">
+        <label for="r-${esc(i.token)}">to</label><input id="r-${esc(i.token)}" type="email" inputmode="email" value="${esc(i.to)}">
         <label for="s-${esc(i.token)}">subject</label><input id="s-${esc(i.token)}" value="${esc(i.subject)}">
         <label for="t-${esc(i.token)}">email</label><textarea id="t-${esc(i.token)}">${esc(i.body)}</textarea></div>
         ${facts}<div class="actions"><button class="send" type="button" data-save="${esc(i.token)}">Save and send</button>
@@ -630,13 +634,13 @@ function card(i) {
   const hk = "h:" + i.folder, fid = esc(i.folder);
   if (editing.has(hk)) {
     return `<article class="item">${head}<div class="edit">
-      <label for="ht-${fid}">to</label><input id="ht-${fid}" type="email" inputmode="email" value="${esc(i.to)}" placeholder="general address published on their site">
-      <label for="hs-${fid}">subject</label><input id="hs-${fid}" value="${esc(i.subject)}">
+      <label for="ht-${fid}">to</label><input id="ht-${fid}" type="email" inputmode="email" value="${esc(i.to)}" placeholder="their general address, or the person you write to">
+      ${warns}<label for="hs-${fid}">subject</label><input id="hs-${fid}" value="${esc(i.subject)}">
       <label for="hb-${fid}">email</label><textarea id="hb-${fid}">${esc(i.body)}</textarea></div>
       <div class="actions3"><button class="send" type="button" data-hsave="${fid}" data-send="1">Save and send</button>
       <button type="button" data-hsave="${fid}">Save</button><button type="button" data-hcancel="${fid}">Cancel</button></div></article>`;
   }
-  const emailView = i.body ? `<div class="facts">to <b>${esc(i.to || "no address yet")}</b>${i.attach ? `<br>attached <b>${esc(i.attach)} services PDF</b>` : ""}</div>
+  const emailView = i.body ? `<div class="facts">to <b>${esc(i.to || "no address yet")}</b>${i.attach ? `<br>attached <b>${esc(i.attach)} services PDF</b>` : ""}</div>${warns}
     <div class="body" id="hb-view-${fid}">${esc(i.body)}</div><button class="more" type="button" data-more="hb-view-${fid}">read the whole email</button>
     <button class="editlink" type="button" data-hedit="${fid}">edit the email</button>` : "";
   const sentText = asked[i.folder] === DROPPED ? DROPPED : (i.fixing || asked[i.folder]);
@@ -648,7 +652,7 @@ function card(i) {
       ? `<div class="working"><b>Saved and approved.</b> Waiting for your PC to check and queue it.<small>If it cannot go out yet, you get a notification saying why.</small></div>`
       : `<div class="working"><b>With the agent.</b> It comes back in To approve when fixed, or here with a note.<small>You asked: ${esc(sentText)}</small></div>${dropBtn}`)
     : `<div class="ask"><textarea id="a-${esc(i.folder)}" aria-label="Instruction for the agent"
-        placeholder="Tell the agent what to do, for example: use their other address, check the archive page again, make it shorter, send it after all"></textarea>
+        placeholder="Tell the agent what to do, for example: write to rui@example.org (Rui Guerra), check the archive page again, make it shorter, send it after all"></textarea>
         <div class="row2"><button class="primary" type="button" data-ask="${esc(i.folder)}">Send to agent</button>
         <button type="button" data-drop="${esc(i.folder)}">Drop this lead</button></div></div>`;
   return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div>
@@ -658,7 +662,7 @@ function card(i) {
 document.getElementById("refresh").onclick = async () => { await load(); render() };   // asked for: show it now
 document.getElementById("newbar").onclick = () => { if (updateReady) location.reload(); else render() };
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 14;
+const VERSION = 15;
 if ("serviceWorker" in navigator) {
   // a new version installs itself; the app never reloads by itself (that wiped what Alice was typing): a bar
   // offers the reload, and what is open or typed comes back from sessionStorage
