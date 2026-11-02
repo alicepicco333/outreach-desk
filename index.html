@@ -164,7 +164,7 @@ const NTFY = "https://ntfy.sh";
 const TABS = [
   { id: "approve", label: "to approve", title: "To approve", lede: "Read each email. Send queues it; nothing leaves before its send day." },
   { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day: {schedule}. First emails to funded leads go out first, then the rest in order of approval. Tap one to read exactly what will go out." },
-  { id: "sent", label: "sent", title: "Sent", lede: "Every email that went out, newest first, exactly as it was sent. Tap one to read it all. One follow-up comes back for approval after 10 days." },
+  { id: "sent", label: "sent", title: "Sent", lede: "Every email that went out, newest first, exactly as it was sent. Tap one to read it all.{followup}" },
   { id: "replies", label: "replies", title: "Replies", lede: "Answers and bounces. Read them in Gmail." },
   { id: "held", label: "held", title: "Held", lede: "Drafts that need a fix, and emails you skipped." },
   { id: "agents", label: "agents", title: "Agents", lede: "What the agents are doing with your Held instructions, what they decided, and when each agent last ran." },
@@ -434,6 +434,10 @@ function ago(iso) {
   return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : day(iso);
 }
 
+// follow-ups are off since 2026-11-02 (outreach_mail.followups in settings.json): no follow-up dates are shown
+function fuOn() { return data?.followups === true }
+function followupText() { return fuOn() ? ` One follow-up comes back for approval after ${data.followup_after_days || 10} days.` : " No follow-ups are sent: answers show up in Replies." }
+
 const FULL = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" };
 function scheduleText() {
   const order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -484,7 +488,7 @@ function render() {
   if (tab === "sent") items.sort((a, b) => (b.sent_date || b.sent_at || "").localeCompare(a.sent_date || a.sent_at || ""));
   // the sender's own order (send_order in outreach_send.py): by planned day, then its place in the queue
   if (tab === "queued") items.sort((a, b) => (a.slot || "9").localeCompare(b.slot || "9") || (a.order ?? 999) - (b.order ?? 999) || (a.kind === "first" ? 0 : 1) - (b.kind === "first" ? 0 : 1));
-  let html = `<h1>${T.title}</h1><p class="lede">${T.lede.replace("{schedule}", scheduleText())}</p>`;
+  let html = `<h1>${T.title}</h1><p class="lede">${T.lede.replace("{schedule}", scheduleText()).replace("{followup}", followupText())}</p>`;
   if (data && (Date.now() - new Date(data.generated_at)) > 3 * 3600e3)
     html += `<div class="banner">Last update from your PC was ${ago(data.generated_at)}. Is it on? Decisions are kept and applied when it is back.</div>`;
   if (tab === "approve" && data?.in_line) html += `<p class="note">${data.in_line} more checked draft${data.in_line > 1 ? "s" : ""} in line: they come here as you decide.</p>`;
@@ -599,7 +603,7 @@ function sentCard(i) {
   const fu = i.kind === "followup";
   const head = `<div class="top"><div class="org">${esc(i.org)}</div><div class="tag ${fu ? "blue" : ""}">${fu ? "follow-up" : "first email"} · ${esc(i.lang)}</div></div>`;
   const at = i.sent_date || i.sent_at;
-  const facts = `<div class="facts">sent <b>${esc(when(at))}</b><br>to <b>${esc(i.sent_to || i.to)}</b>${i.sent_attach ? `<br>attached <b>${esc(i.sent_attach)}</b>` : ""}${i.state === "sent" && i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}</div>`;
+  const facts = `<div class="facts">sent <b>${esc(when(at))}</b><br>to <b>${esc(i.sent_to || i.to)}</b>${i.sent_attach ? `<br>attached <b>${esc(i.sent_attach)}</b>` : ""}${i.state === "sent" && fuOn() && i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}</div>`;
   let status = "";
   if (i.state === "replied") {
     const r = i.their_reply ? (i.their_reply.split("\n\n").slice(1).join("\n\n") || i.their_reply) : "";
@@ -643,7 +647,7 @@ function card(i) {
   }
   if (i.state === "queued") {
     // the approved version, built exactly as the sender will send it; if the draft changed since, no text is shown
-    const facts = `<div class="facts">to <b>${esc(i.to)}</b>${i.attach ? `<br>attached <b>${esc(i.attach)}</b>` : ""}${i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}${i.funded ? `<br>funded lead: goes before the others` : ""}${i.approved_at ? `<br>approved ${esc(when(i.approved_at))}` : ""}</div>`;
+    const facts = `<div class="facts">to <b>${esc(i.to)}</b>${i.attach ? `<br>attached <b>${esc(i.attach)}</b>` : ""}${fuOn() && i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}${i.funded ? `<br>funded lead: goes before the others` : ""}${i.approved_at ? `<br>approved ${esc(when(i.approved_at))}` : ""}</div>`;
     const text = i.changed
       ? `<div class="note warn">${i.changed === "edited"
           ? "This email was changed after you approved it, so it will not go out as approved: the new version comes back to To approve."
@@ -655,7 +659,7 @@ function card(i) {
   const sentView = sentBody(i);
   if (i.state === "sent")
     return `<article class="item">${head}<div class="sub">${esc(i.sent_subject || i.subject)}</div><div class="big">Sent ${esc(when(i.sent_at))}</div>
-      <div class="facts">to <b>${esc(i.sent_to || i.to)}</b>${i.sent_attach ? `<br>attached <b>${esc(i.sent_attach)}</b>` : ""}${i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}</div>${sentView}</article>`;
+      <div class="facts">to <b>${esc(i.sent_to || i.to)}</b>${i.sent_attach ? `<br>attached <b>${esc(i.sent_attach)}</b>` : ""}${fuOn() && i.followup_due ? `<br>follow-up due ${esc(day(i.followup_due))}` : ""}</div>${sentView}</article>`;
   if (i.state === "bounced")
     return `<article class="item">${head}<div class="sub">${esc(i.subject)}</div>
       <div class="big warn">Bounced: address not working</div><div class="note">${esc(i.note)}</div></article>`;
@@ -703,7 +707,7 @@ function card(i) {
 document.getElementById("refresh").onclick = async () => { await load(); render() };   // asked for: show it now
 document.getElementById("newbar").onclick = () => { if (updateReady) location.reload(); else render() };
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 18;
+const VERSION = 19;
 if ("serviceWorker" in navigator) {
   // a new version installs itself; the app never reloads by itself (that wiped what Alice was typing): a bar
   // offers the reload, and what is open or typed comes back from sessionStorage
