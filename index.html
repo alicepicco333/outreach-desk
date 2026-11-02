@@ -165,12 +165,13 @@ const TABS = [
   { id: "approve", label: "to approve", title: "To approve", lede: "Read each email. Send queues it; nothing leaves before its send day." },
   { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day: {schedule}. First emails to funded leads go out first, then the rest in order of approval. Tap one to read exactly what will go out." },
   { id: "sent", label: "sent", title: "Sent", lede: "Every email that went out, newest first, exactly as it was sent. Tap one to read it all.{followup}" },
-  { id: "replies", label: "replies", title: "Replies", lede: "Answers and bounces. Read them in Gmail." },
+  { id: "replies", label: "replies", title: "Replies", lede: "Answers to your emails. Read them in Gmail. Emails that could not be delivered are in Sent, under Not delivered." },
   { id: "held", label: "held", title: "Held", lede: "Drafts that need a fix, and emails you skipped." },
   { id: "agents", label: "agents", title: "Agents", lede: "What the agents are doing with your Held instructions, what they decided, and when each agent last ran." },
   { id: "results", label: "results", title: "Results", lede: "What gets answers: first emails sent, and how many replied, by kind of organisation and by service track." },
 ];
-const GROUP = { approve: "approve", queued: "queued", sent: "sent", replied: "replies", bounced: "replies", fix: "held", skipped: "held" };
+// bounced emails are not replies (2026-11-02): they sit in Sent, in their own "Not delivered" section
+const GROUP = { approve: "approve", queued: "queued", sent: "sent", replied: "replies", bounced: "sent", fix: "held", skipped: "held" };
 const WENT_OUT = new Set(["sent", "replied", "bounced"]);       // the Sent tab lists every email that went out
 function inTab(i, t) { return GROUP[i.state] === t || (t === "sent" && WENT_OUT.has(i.state)) }
 const store = {
@@ -484,14 +485,18 @@ function render() {
   const T = TABS.find(t => t.id === tab);
   if (tab === "results") { main.innerHTML = resultsHTML(T); renderPush(); return }
   if (tab === "agents") { main.innerHTML = agentsHTML(T); renderPush(); return }
-  const items = (data?.items || []).filter(i => inTab(i, tab));
+  let items = (data?.items || []).filter(i => inTab(i, tab));
   if (tab === "sent") items.sort((a, b) => (b.sent_date || b.sent_at || "").localeCompare(a.sent_date || a.sent_at || ""));
+  const undelivered = tab === "sent" ? items.filter(i => i.state === "bounced") : [];
+  if (undelivered.length) items = items.filter(i => i.state !== "bounced");
   // the sender's own order (send_order in outreach_send.py): by planned day, then its place in the queue
   if (tab === "queued") items.sort((a, b) => (a.slot || "9").localeCompare(b.slot || "9") || (a.order ?? 999) - (b.order ?? 999) || (a.kind === "first" ? 0 : 1) - (b.kind === "first" ? 0 : 1));
   let html = `<h1>${T.title}</h1><p class="lede">${T.lede.replace("{schedule}", scheduleText()).replace("{followup}", followupText())}</p>`;
   if (data && (Date.now() - new Date(data.generated_at)) > 3 * 3600e3)
     html += `<div class="banner">Last update from your PC was ${ago(data.generated_at)}. Is it on? Decisions are kept and applied when it is back.</div>`;
   if (tab === "approve" && data?.in_line) html += `<p class="note">${data.in_line} more checked draft${data.in_line > 1 ? "s" : ""} in line: they come here as you decide.</p>`;
+  if (undelivered.length)
+    html += `<h2>Not delivered</h2><div class="list">${undelivered.map(undeliveredCard).join("")}</div><h2>Delivered</h2>`;
   html += `<div class="list">`;
   if (!items.length) html += `<div class="empty">${tab === "approve" ? "Nothing to approve right now." : "Nothing here yet."}</div>`;
   for (const i of items) html += tab === "sent" ? sentCard(i) : card(i);
@@ -599,6 +604,17 @@ function sentBody(i) {
     <button class="more" type="button" data-more="sb-${esc(i.key)}">read the whole email</button>`;
 }
 // one email that went out, as sent: also the ones that got an answer or bounced (their reply is folded under it)
+// an email that bounced: the reason in plain words and what to do, never mixed with the replies
+function undeliveredCard(i) {
+  const head = `<div class="top"><div class="org">${esc(i.org)}</div><div class="tag">${i.kind === "followup" ? "follow-up" : "first email"} · ${esc(i.lang)}</div></div>`;
+  const why = i.bounce_reason || "the email could not be delivered";
+  return `<article class="item">${head}<div class="sub">${esc(i.sent_subject || i.subject)}</div>
+    <div class="big warn">Not delivered: ${esc(why)}</div>
+    <div class="facts">sent <b>${esc(when(i.sent_date || i.sent_at))}</b><br>to <b>${esc(i.sent_to || i.to)}</b>${i.bounce_detail ? `<br>their mail server said: ${esc(i.bounce_detail)}` : ""}</div>
+    <div class="note">Next step: find another address for ${esc(i.org)}, on their contact page or as a named person's work address on their own site.</div>
+    ${sentBody(i)}<div class="row2">${i.sent_gmail ? `<a href="${esc(i.sent_gmail)}" target="_blank" rel="noopener">open in Gmail</a>` : ""}</div></article>`;
+}
+
 function sentCard(i) {
   const fu = i.kind === "followup";
   const head = `<div class="top"><div class="org">${esc(i.org)}</div><div class="tag ${fu ? "blue" : ""}">${fu ? "follow-up" : "first email"} · ${esc(i.lang)}</div></div>`;
@@ -707,7 +723,7 @@ function card(i) {
 document.getElementById("refresh").onclick = async () => { await load(); render() };   // asked for: show it now
 document.getElementById("newbar").onclick = () => { if (updateReady) location.reload(); else render() };
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 20;
+const VERSION = 21;
 if ("serviceWorker" in navigator) {
   // a new version installs itself; the app never reloads by itself (that wiped what Alice was typing): a bar
   // offers the reload, and what is open or typed comes back from sessionStorage
