@@ -550,8 +550,8 @@ function render() {
 }
 
 const SEG = { "funded-project": "Funded projects", institution: "Museums, archives, libraries", "eaa-company": "Companies (accessibility act)",
-  agency: "Agencies", scaleup: "Funded scale-ups", small: "Small organisations", "small (before money first)": "Small, before money first" };
-const TRK = { archives: "Archives and collections", research: "Research and accessibility", unknown: "Unknown" };
+  agency: "Agencies", brand: "Brands", scaleup: "Funded scale-ups", small: "Small organisations", "small (before money first)": "Small, before money first" };
+const TRK = { archives: "Archives and collections", research: "Research and accessibility", website: "Websites and webshops", unknown: "Unknown" };
 function pct(a, b) { return b ? Math.round(100 * a / b) : 0 }
 function resultsHTML(T) {
   const r = data?.results;
@@ -707,7 +707,7 @@ function card(i) {
 document.getElementById("refresh").onclick = async () => { await load(); render() };   // asked for: show it now
 document.getElementById("newbar").onclick = () => { if (updateReady) location.reload(); else render() };
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 19;
+const VERSION = 20;
 if ("serviceWorker" in navigator) {
   // a new version installs itself; the app never reloads by itself (that wiped what Alice was typing): a bar
   // offers the reload, and what is open or typed comes back from sessionStorage
