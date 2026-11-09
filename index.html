@@ -170,7 +170,7 @@ const TABS = [
   { id: "internships", label: "internships", title: "Internships", lede: "Emails to studios about an internship or a project, and vacancies you apply to yourself. Studio emails go out before all other first emails." },
   { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day: {schedule}. Studio emails (in Internships) go first, then first emails to funded leads, then the rest in order of approval. Tap one to read exactly what will go out." },
   { id: "sent", label: "sent", title: "Sent", lede: "Every email that went out, newest first, exactly as it was sent. Tap one to read it all.{followup}" },
-  { id: "replies", label: "replies", title: "Replies", lede: "Answers to your emails. Read them in Gmail. Emails that could not be delivered are in Sent, under Not delivered." },
+  { id: "replies", label: "replies", title: "Replies", lede: "Answers to your emails. Read them in Gmail. A lead whose email could not be delivered is dropped, and you get a note." },
   { id: "held", label: "held", title: "Held", lede: "Drafts that need a fix, and emails you skipped." },
   { id: "agents", label: "agents", title: "Agents", lede: "What the agents are doing with your Held instructions, what they decided, and when each agent last ran." },
   { id: "results", label: "results", title: "Results", lede: "What gets answers: first emails sent, and how many replied, by kind of organisation and by service track." },
@@ -793,7 +793,7 @@ function card(i) {
 document.getElementById("refresh").onclick = async () => { await load(); render() };   // asked for: show it now
 document.getElementById("newbar").onclick = () => { if (updateReady) location.reload(); else render() };
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 23;
+const VERSION = 24;
 if ("serviceWorker" in navigator) {
   // a new version installs itself; the app never reloads by itself (that wiped what Alice was typing): a bar
   // offers the reload, and what is open or typed comes back from sessionStorage
