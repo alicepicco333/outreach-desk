@@ -46,6 +46,7 @@
   nav button .n { margin-left: 6px }
   nav button.hot .n { color: var(--blue) }
   nav button[aria-selected="true"].hot .n { color: var(--bg) }
+  @media (max-width: 480px) { nav { gap: 4px } nav button { padding: 9px 6px } nav button .n { margin-left: 4px } }   /* eight tabs: two rows on a phone */
   h1 { font-weight: 800; font-size: 34px; line-height: 1.05; letter-spacing: -.035em; margin: 22px 0 6px }
   .lede { color: var(--muted); font-size: 15px; margin-bottom: 14px }
   .list { border-top: 1px solid var(--hair) }
@@ -138,6 +139,9 @@
              padding: 12px 14px; background: var(--card); font-size: 14px }
   .pushbar button { flex: none; font: 600 14px var(--sans); background: var(--ink); color: var(--bg); border: 0;
                     min-height: 40px; padding: 0 14px; cursor: pointer }
+  .note.none { margin: 0; padding: 10px 0 }
+  h2 .count { font: 500 12px var(--mono); color: var(--muted); margin-left: 6px }
+  .runs .r button.more { padding: 0 0 0 10px; flex: none }
   footer { font: 400 11px/1.6 var(--mono); color: var(--muted); padding: 28px 0 36px }
   @media (prefers-reduced-motion: no-preference) { .item { animation: in .18s ease-out } }
   @keyframes in { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
@@ -163,7 +167,8 @@
 const NTFY = "https://ntfy.sh";
 const TABS = [
   { id: "approve", label: "to approve", title: "To approve", lede: "Read each email. Send queues it; nothing leaves before its send day." },
-  { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day: {schedule}. Emails to studios go out first, then first emails to funded leads, then the rest in order of approval. Tap one to read exactly what will go out." },
+  { id: "internships", label: "internships", title: "Internships", lede: "Emails to studios about an internship or a project, and vacancies you apply to yourself. Studio emails go out before all other first emails." },
+  { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day: {schedule}. Studio emails (in Internships) go first, then first emails to funded leads, then the rest in order of approval. Tap one to read exactly what will go out." },
   { id: "sent", label: "sent", title: "Sent", lede: "Every email that went out, newest first, exactly as it was sent. Tap one to read it all.{followup}" },
   { id: "replies", label: "replies", title: "Replies", lede: "Answers to your emails. Read them in Gmail. Emails that could not be delivered are in Sent, under Not delivered." },
   { id: "held", label: "held", title: "Held", lede: "Drafts that need a fix, and emails you skipped." },
@@ -173,7 +178,10 @@ const TABS = [
 // bounced emails are not replies (2026-11-02): they sit in Sent, in their own "Not delivered" section
 const GROUP = { approve: "approve", queued: "queued", sent: "sent", replied: "replies", bounced: "sent", fix: "held", skipped: "held" };
 const WENT_OUT = new Set(["sent", "replied", "bounced"]);       // the Sent tab lists every email that went out
-function inTab(i, t) { return GROUP[i.state] === t || (t === "sent" && WENT_OUT.has(i.state)) }
+function inTab(i, t) {
+  if (i.studio && GROUP[i.state] !== "held") return t === "internships";   // studio leads have their own tab; Held is shared
+  return GROUP[i.state] === t || (t === "sent" && WENT_OUT.has(i.state));
+}
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d } catch (e) { return d } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch (e) {} },
@@ -214,6 +222,8 @@ function showBar() {
 setInterval(() => { if (pendingRender && !busy()) { pendingRender = false; render() } }, 3000);
 let asked = store.get("od-asked", {});           // folder -> instruction sent to the fixer, until the PC confirms
 const DROPPED = "Dropped by you.";
+let vacTaps = store.get("od-vac", {});            // vacancy id -> "done" or "undo", until the PC confirms
+const repliesSeen = new Set(store.get("od-int-replies", []));   // studio replies already shown in Internships on this device
 
 // ---------- setup: the private link carries the key after the #, which never reaches any server
 function readLink(text) {
@@ -262,6 +272,11 @@ async function load() {
     // a Drop the PC never applied (it still lists the email 10 minutes later): show the buttons again
     for (const f of Object.keys(asked)) if (asked[f] === DROPPED && held.has(f) && new Date(data.generated_at) - (asked[f + ":at"] || 0) > 600000) { delete asked[f]; delete asked[f + ":at"]; delete asked[f + ":seen"] }
     store.set("od-asked", asked);
+    for (const id of Object.keys(vacTaps)) {
+      const v = (data.portal_vacancies || []).find(x => x.id === id);
+      if (!v || !!v.done === (vacTaps[id] === "done")) delete vacTaps[id];
+    }
+    store.set("od-vac", vacTaps);
   }
   paint();
   schedule();
@@ -383,6 +398,20 @@ async function decide(item, action, btns) {
   schedule();
 }
 
+// a vacancy Alice applied to through its form or portal: only marks it, nothing else happens on the PC
+async function tapVac(id, action, btn) {
+  btn.disabled = true;
+  vacTaps[id] = action; store.set("od-vac", vacTaps);
+  try {
+    const r = await fetch(`${NTFY}/${cfg.a}`, { method: "POST", body: `vac:${action}:${id}` });
+    if (!r.ok) throw new Error(r.status);
+  } catch (e) {
+    delete vacTaps[id]; store.set("od-vac", vacTaps);
+    alert("That could not be saved (no connection?). Nothing changed; try again.");
+  }
+  render(); schedule();
+}
+
 // ---------- notifications (web push from your PC, only to devices that turned them on)
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
 const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
@@ -454,9 +483,12 @@ function scheduleText() {
 }
 
 function counts() {
-  const c = { approve: 0, queued: 0, sent: 0, replies: 0, held: 0, results: data?.results?.total?.sent || 0,
+  const c = { approve: 0, internships: 0, queued: 0, sent: 0, replies: 0, held: 0, results: data?.results?.total?.sent || 0,
               agents: (data?.agents?.jobs || []).length };
-  (data?.items || []).forEach(i => { c[GROUP[i.state]]++; if (GROUP[i.state] !== "sent" && WENT_OUT.has(i.state)) c.sent++ });
+  (data?.items || []).forEach(i => {
+    if (inTab(i, "internships")) { if (i.state === "approve" || (i.state === "replied" && !repliesSeen.has(i.key))) c.internships++; return }   // what needs Alice
+    c[GROUP[i.state]]++; if (GROUP[i.state] !== "sent" && WENT_OUT.has(i.state)) c.sent++;
+  });
   return c;
 }
 
@@ -476,9 +508,13 @@ function render() {
     return;
   }
   pendingRender = false; showBar();
+  if (tab === "internships" && data) {                 // opening the tab shows the replies: they are no longer new
+    data.items.forEach(i => { if (i.studio && i.state === "replied") repliesSeen.add(i.key) });
+    store.set("od-int-replies", [...repliesSeen]);
+  }
   const c = counts();
   tabs.innerHTML = TABS.map(t => `<button role="tab" type="button" data-tab="${t.id}" aria-selected="${t.id === tab}"
-    class="${(t.id === "approve" && c.approve) || (t.id === "replies" && c.replies) || (t.id === "agents" && c.agents) ? "hot" : ""}">${t.label}<span class="n">${c[t.id]}</span></button>`).join("");
+    class="${(t.id === "approve" && c.approve) || (t.id === "internships" && c.internships) || (t.id === "replies" && c.replies) || (t.id === "agents" && c.agents) ? "hot" : ""}">${t.label}<span class="n">${c[t.id]}</span></button>`).join("");
   tabs.querySelectorAll("button").forEach(b => b.onclick = () => { tab = b.dataset.tab; store.set("od-tab", tab); render(); window.scrollTo(0, 0) });
 
   document.getElementById("updated").textContent = data ? `updated ${ago(data.generated_at)}` : "no data yet";
@@ -486,21 +522,24 @@ function render() {
   if (tab === "results") { main.innerHTML = resultsHTML(T); renderPush(); return }
   if (tab === "agents") { main.innerHTML = agentsHTML(T); renderPush(); return }
   let items = (data?.items || []).filter(i => inTab(i, tab));
-  if (tab === "sent") items.sort((a, b) => (b.sent_date || b.sent_at || "").localeCompare(a.sent_date || a.sent_at || ""));
+  if (tab === "sent") items.sort(NEWEST);
   const undelivered = tab === "sent" ? items.filter(i => i.state === "bounced") : [];
   if (undelivered.length) items = items.filter(i => i.state !== "bounced");
   // the sender's own order (send_order in outreach_send.py): by planned day, then its place in the queue
-  if (tab === "queued") items.sort((a, b) => (a.slot || "9").localeCompare(b.slot || "9") || (a.order ?? 999) - (b.order ?? 999) || (a.kind === "first" ? 0 : 1) - (b.kind === "first" ? 0 : 1));
+  if (tab === "queued") items.sort(QUEUE);
   let html = `<h1>${T.title}</h1><p class="lede">${T.lede.replace("{schedule}", scheduleText()).replace("{followup}", followupText())}</p>`;
   if (data && (Date.now() - new Date(data.generated_at)) > 3 * 3600e3)
     html += `<div class="banner">Last update from your PC was ${ago(data.generated_at)}. Is it on? Decisions are kept and applied when it is back.</div>`;
   if (tab === "approve" && data?.in_line) html += `<p class="note">${data.in_line} more checked draft${data.in_line > 1 ? "s" : ""} in line: they come here as you decide.</p>`;
-  if (undelivered.length)
-    html += `<h2>Not delivered</h2><div class="list">${undelivered.map(undeliveredCard).join("")}</div><h2>Delivered</h2>`;
-  html += `<div class="list">`;
-  if (!items.length) html += `<div class="empty">${tab === "approve" ? "Nothing to approve right now." : "Nothing here yet."}</div>`;
-  for (const i of items) html += tab === "sent" ? sentCard(i) : card(i);
-  html += `</div>`;
+  if (tab === "internships") html += internshipsHTML(items);
+  else {
+    if (undelivered.length)
+      html += `<h2>Not delivered</h2><div class="list">${undelivered.map(undeliveredCard).join("")}</div><h2>Delivered</h2>`;
+    html += `<div class="list">`;
+    if (!items.length) html += `<div class="empty">${tab === "approve" ? "Nothing to approve right now." : "Nothing here yet."}</div>`;
+    for (const i of items) html += tab === "sent" ? sentCard(i) : card(i);
+    html += `</div>`;
+  }
   const y = scrollY;
   main.innerHTML = html;
   sess.set("od-editing", [...editing]);
@@ -517,6 +556,7 @@ function render() {
   main.querySelectorAll(".body[id]").forEach(el => el.onclick = () => {
     if (!el.classList.contains("open")) main.querySelector(`[data-more="${el.id}"]`)?.click();
   });
+  main.querySelectorAll("[data-vac]").forEach(b => b.onclick = () => tapVac(b.dataset.vac, b.dataset.action, b));
   main.querySelectorAll("[data-goto]").forEach(b => b.onclick = () => { tab = b.dataset.goto; store.set("od-tab", tab); render(); window.scrollTo(0, 0) });
   main.querySelectorAll("[data-hedit]").forEach(b => b.onclick = () => { editing.add("h:" + b.dataset.hedit); render() });
   main.querySelectorAll("[data-hcancel]").forEach(b => b.onclick = () => { const f = b.dataset.hcancel; editing.delete("h:" + f); forget("ht-" + f, "hs-" + f, "hb-" + f); render() });
@@ -577,6 +617,36 @@ function resultsHTML(T) {
 }
 
 function when(iso) { if (!iso) return ""; return `${day(iso)} ${iso.slice(11, 16)}` }
+
+const NEWEST = (a, b) => (b.sent_date || b.sent_at || "").localeCompare(a.sent_date || a.sent_at || "");
+const QUEUE = (a, b) => (a.slot || "9").localeCompare(b.slot || "9") || (a.order ?? 999) - (b.order ?? 999) || (a.kind === "first" ? 0 : 1) - (b.kind === "first" ? 0 : 1);
+function section(title, list, cardFn) {
+  return `<h2>${title}${list.length ? `<span class="count">${list.length}</span>` : ""}</h2><div class="list">`
+    + (list.length ? list.map(cardFn).join("") : `<div class="note none">Nothing here yet.</div>`) + `</div>`;
+}
+function vacancyCard(v) {
+  const open = /^https?:/i.test(v.link) ? `<a class="primary" href="${esc(v.link)}" target="_blank" rel="noopener">open the vacancy</a>` : "";
+  return `<article class="item"><div class="top"><div class="org">${esc(v.studio)}</div><div class="tag">${esc(day(v.date))}</div></div>
+    <div class="sub">${esc(v.role)}</div>${v.note ? `<div class="note">${esc(v.note)}</div>` : ""}
+    <div class="row2">${open}<button type="button" data-vac="${esc(v.id)}" data-action="done">done</button></div></article>`;
+}
+function vacanciesHTML() {
+  const all = (data?.portal_vacancies || []).map(v => ({ ...v, done: vacTaps[v.id] ? vacTaps[v.id] === "done" : !!v.done }));
+  const open = all.filter(v => !v.done), done = all.filter(v => v.done);
+  let h = section("Apply yourself", open, vacancyCard);
+  if (done.length) h += `<div class="label">done</div><div class="runs">` + done.map(v => `<div class="r">${esc(v.studio)}: ${esc(v.role)}<button class="more" type="button" data-vac="${esc(v.id)}" data-action="undo">undo</button></div>`).join("") + `</div>`;
+  return h;
+}
+// everything for studio leads except Held. A reply shows once, under Replies, with what was sent folded into its card.
+function internshipsHTML(items) {
+  const of = s => items.filter(i => i.state === s);
+  const held = (data?.items || []).filter(i => i.studio && GROUP[i.state] === "held").length;
+  let h = vacanciesHTML();
+  if (held) h += `<p class="note">${held} studio email${held > 1 ? "s are" : " is"} in Held. <button class="inline" type="button" data-goto="held" style="background:none;border:0;font:inherit;cursor:pointer">open Held</button></p>`;
+  h += section("To approve", of("approve"), card) + section("Queued", of("queued").sort(QUEUE), card);
+  if (of("bounced").length) h += section("Not delivered", of("bounced").sort(NEWEST), undeliveredCard);
+  return h + section("Sent", of("sent").sort(NEWEST), sentCard) + section("Replies", of("replied"), card);
+}
 function agentsHTML(T) {
   const a = data?.agents || { jobs: [], history: [], runs: [] };
   let h = `<h1>${T.title}</h1><p class="lede">${T.lede}</p><h2>Working now</h2><div class="list">`;
@@ -723,7 +793,7 @@ function card(i) {
 document.getElementById("refresh").onclick = async () => { await load(); render() };   // asked for: show it now
 document.getElementById("newbar").onclick = () => { if (updateReady) location.reload(); else render() };
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 22;
+const VERSION = 23;
 if ("serviceWorker" in navigator) {
   // a new version installs itself; the app never reloads by itself (that wiped what Alice was typing): a bar
   // offers the reload, and what is open or typed comes back from sessionStorage
