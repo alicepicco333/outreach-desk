@@ -163,7 +163,7 @@
 const NTFY = "https://ntfy.sh";
 const TABS = [
   { id: "approve", label: "to approve", title: "To approve", lede: "Read each email. Send queues it; nothing leaves before its send day." },
-  { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day: {schedule}. First emails to funded leads go out first, then the rest in order of approval. Tap one to read exactly what will go out." },
+  { id: "queued", label: "queued", title: "Queued", lede: "Approved and waiting for its send day: {schedule}. Emails to studios go out first, then first emails to funded leads, then the rest in order of approval. Tap one to read exactly what will go out." },
   { id: "sent", label: "sent", title: "Sent", lede: "Every email that went out, newest first, exactly as it was sent. Tap one to read it all.{followup}" },
   { id: "replies", label: "replies", title: "Replies", lede: "Answers to your emails. Read them in Gmail. Emails that could not be delivered are in Sent, under Not delivered." },
   { id: "held", label: "held", title: "Held", lede: "Drafts that need a fix, and emails you skipped." },
@@ -555,8 +555,8 @@ function render() {
 }
 
 const SEG = { "funded-project": "Funded projects", institution: "Museums, archives, libraries", "eaa-company": "Companies (accessibility act)",
-  agency: "Agencies", brand: "Brands", scaleup: "Funded scale-ups", small: "Small organisations", "small (before money first)": "Small, before money first" };
-const TRK = { archives: "Archives and collections", research: "Research and accessibility", website: "Websites and webshops", unknown: "Unknown" };
+  agency: "Agencies", brand: "Brands", studio: "Studios", scaleup: "Funded scale-ups", small: "Small organisations", "small (before money first)": "Small, before money first" };
+const TRK = { archives: "Archives and collections", research: "Research and accessibility", website: "Websites and webshops", cv: "Internships and collaborations", unknown: "Unknown" };
 function pct(a, b) { return b ? Math.round(100 * a / b) : 0 }
 function resultsHTML(T) {
   const r = data?.results;
@@ -723,7 +723,7 @@ function card(i) {
 document.getElementById("refresh").onclick = async () => { await load(); render() };   // asked for: show it now
 document.getElementById("newbar").onclick = () => { if (updateReady) location.reload(); else render() };
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 21;
+const VERSION = 22;
 if ("serviceWorker" in navigator) {
   // a new version installs itself; the app never reloads by itself (that wiped what Alice was typing): a bar
   // offers the reload, and what is open or typed comes back from sessionStorage
