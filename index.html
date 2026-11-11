@@ -549,7 +549,7 @@ function render() {
   scrollTo(0, y);
   main.querySelectorAll("[data-more]").forEach(b => b.onclick = () => {
     const el = document.getElementById(b.dataset.more); el.classList.toggle("open");
-    b.textContent = el.classList.contains("open") ? "show less" : "read the whole email";
+    b.textContent = el.classList.contains("open") ? "show less" : (b.dataset.label || "read the whole email");
     if (el.classList.contains("open")) opened.add(b.dataset.more); else opened.delete(b.dataset.more);
     sess.set("od-opened", [...opened]);
   });
@@ -557,6 +557,11 @@ function render() {
     if (!el.classList.contains("open")) main.querySelector(`[data-more="${el.id}"]`)?.click();
   });
   main.querySelectorAll("[data-vac]").forEach(b => b.onclick = () => tapVac(b.dataset.vac, b.dataset.action, b));
+  main.querySelectorAll("[data-vcopy]").forEach(b => b.onclick = async () => {
+    const v = (data?.portal_vacancies || []).find(x => x.id === b.dataset.vcopy);
+    try { await navigator.clipboard.writeText(v.draft); b.textContent = "copied" } catch (e) { b.textContent = "copy failed" }
+    setTimeout(() => b.textContent = "copy the draft", 2500);
+  });
   main.querySelectorAll("[data-goto]").forEach(b => b.onclick = () => { tab = b.dataset.goto; store.set("od-tab", tab); render(); window.scrollTo(0, 0) });
   main.querySelectorAll("[data-hedit]").forEach(b => b.onclick = () => { editing.add("h:" + b.dataset.hedit); render() });
   main.querySelectorAll("[data-hcancel]").forEach(b => b.onclick = () => { const f = b.dataset.hcancel; editing.delete("h:" + f); forget("ht-" + f, "hs-" + f, "hb-" + f); render() });
@@ -624,11 +629,21 @@ function section(title, list, cardFn) {
   return `<h2>${title}${list.length ? `<span class="count">${list.length}</span>` : ""}</h2><div class="list">`
     + (list.length ? list.map(cardFn).join("") : `<div class="note none">Nothing here yet.</div>`) + `</div>`;
 }
+// a vacancy Alice applies to themself: no Send here. Form vacancies carry the agent's draft to paste (Alice, 2026-11-11)
 function vacancyCard(v) {
-  const open = /^https?:/i.test(v.link) ? `<a class="primary" href="${esc(v.link)}" target="_blank" rel="noopener">open the vacancy</a>` : "";
+  const ok = u => /^https?:/i.test(u || ""), form = ok(v.form);
+  const label = v.how === "email" ? "Apply yourself by email: it asks for more than an outreach email carries"
+                                  : "Apply through their form, don't email";
+  const links = (form ? `<a class="primary" href="${esc(v.form)}" target="_blank" rel="noopener">open the form</a>` : "")
+    + (v.draft ? `<button type="button" data-vcopy="${esc(v.id)}">copy the draft</button>` : "")
+    + (ok(v.link) ? `<a ${form ? "" : `class="primary"`} href="${esc(v.link)}" target="_blank" rel="noopener">open the vacancy</a>` : "");
+  const draft = v.draft
+    ? `<div class="label">draft for the form${v.limit ? ` · limit: ${esc(v.limit)}` : ""}</div><div class="body" id="vd-${esc(v.id)}">${esc(v.draft)}</div>
+       <button class="more" type="button" data-more="vd-${esc(v.id)}" data-label="read the whole draft">read the whole draft</button>`
+    : v.draft_expected ? `<div class="note">The draft for the form is not ready yet.</div>` : "";
   return `<article class="item"><div class="top"><div class="org">${esc(v.studio)}</div><div class="tag">${esc(day(v.date))}</div></div>
-    <div class="sub">${esc(v.role)}</div>${v.note ? `<div class="note">${esc(v.note)}</div>` : ""}
-    <div class="row2">${open}<button type="button" data-vac="${esc(v.id)}" data-action="done">done</button></div></article>`;
+    <div class="sub">${esc(v.role)}</div><div class="big warn">${label}</div>${v.note ? `<div class="note">${esc(v.note)}</div>` : ""}
+    ${draft}<div class="row2">${links}<button type="button" data-vac="${esc(v.id)}" data-action="done">done</button></div></article>`;
 }
 function vacanciesHTML() {
   const all = (data?.portal_vacancies || []).map(v => ({ ...v, done: vacTaps[v.id] ? vacTaps[v.id] === "done" : !!v.done }));
@@ -793,7 +808,7 @@ function card(i) {
 document.getElementById("refresh").onclick = async () => { await load(); render() };   // asked for: show it now
 document.getElementById("newbar").onclick = () => { if (updateReady) location.reload(); else render() };
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 24;
+const VERSION = 25;
 if ("serviceWorker" in navigator) {
   // a new version installs itself; the app never reloads by itself (that wiped what Alice was typing): a bar
   // offers the reload, and what is open or typed comes back from sessionStorage
