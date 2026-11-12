@@ -523,6 +523,7 @@ function render() {
   if (tab === "agents") { main.innerHTML = agentsHTML(T); renderPush(); return }
   let items = (data?.items || []).filter(i => inTab(i, tab));
   if (tab === "sent") items.sort(NEWEST);
+  if (tab === "replies") items.sort(REPLY_NEWEST);
   const undelivered = tab === "sent" ? items.filter(i => i.state === "bounced") : [];
   if (undelivered.length) items = items.filter(i => i.state !== "bounced");
   // the sender's own order (send_order in outreach_send.py): by planned day, then its place in the queue
@@ -624,6 +625,7 @@ function resultsHTML(T) {
 function when(iso) { if (!iso) return ""; return `${day(iso)} ${iso.slice(11, 16)}` }
 
 const NEWEST = (a, b) => (b.sent_date || b.sent_at || "").localeCompare(a.sent_date || a.sent_at || "");
+const REPLY_NEWEST = (a, b) => (b.reply_at || b.sent_at || "").localeCompare(a.reply_at || a.sent_at || "");   // replies: newest answer first
 const QUEUE = (a, b) => (a.slot || "9").localeCompare(b.slot || "9") || (a.order ?? 999) - (b.order ?? 999) || (a.kind === "first" ? 0 : 1) - (b.kind === "first" ? 0 : 1);
 function section(title, list, cardFn) {
   return `<h2>${title}${list.length ? `<span class="count">${list.length}</span>` : ""}</h2><div class="list">`
@@ -660,7 +662,7 @@ function internshipsHTML(items) {
   if (held) h += `<p class="note">${held} studio email${held > 1 ? "s are" : " is"} in Held. <button class="inline" type="button" data-goto="held" style="background:none;border:0;font:inherit;cursor:pointer">open Held</button></p>`;
   h += section("To approve", of("approve"), card) + section("Queued", of("queued").sort(QUEUE), card);
   if (of("bounced").length) h += section("Not delivered", of("bounced").sort(NEWEST), undeliveredCard);
-  return h + section("Sent", of("sent").sort(NEWEST), sentCard) + section("Replies", of("replied"), card);
+  return h + section("Sent", of("sent").sort(NEWEST), sentCard) + section("Replies", of("replied").sort(REPLY_NEWEST), card);
 }
 function agentsHTML(T) {
   const a = data?.agents || { jobs: [], history: [], runs: [] };
@@ -808,7 +810,7 @@ function card(i) {
 document.getElementById("refresh").onclick = async () => { await load(); render() };   // asked for: show it now
 document.getElementById("newbar").onclick = () => { if (updateReady) location.reload(); else render() };
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load() });
-const VERSION = 25;
+const VERSION = 26;
 if ("serviceWorker" in navigator) {
   // a new version installs itself; the app never reloads by itself (that wiped what Alice was typing): a bar
   // offers the reload, and what is open or typed comes back from sessionStorage
